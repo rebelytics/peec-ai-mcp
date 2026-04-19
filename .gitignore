@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Python (in case contributors run scripts alongside the skill)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OAuth token caches — must never be committed
+mcp-oauth-tokens.json
+.claude/mcp-oauth-tokens.json
