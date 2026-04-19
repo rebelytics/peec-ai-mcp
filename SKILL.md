@@ -621,7 +621,7 @@ PROFILE, DISCUSSION, HOW_TO_GUIDE, ARTICLE, OTHER
 
 Client-side schema validation reveals one additional value — `ALTERNATIVE` — that exists in the schema but rarely appears in live data. Full documented enum is therefore 11 values.
 
-Recipe §8.2 (URL-level gap analysis) depends on filtering by these values; an agent that filters to `[LISTICLE, COMPARISON]` only will miss gap rows with classifications like `ARTICLE` or `HOW_TO_GUIDE` that are equally relevant to AI-search visibility. Pick the slice deliberately from the full enum, don't default to the two obvious values.
+Recipe §8.2b (URL-level gap analysis) depends on filtering by these values; an agent that filters to `[LISTICLE, COMPARISON]` only will miss gap rows with classifications like `ARTICLE` or `HOW_TO_GUIDE` that are equally relevant to AI-search visibility. Pick the slice deliberately from the full enum, don't default to the two obvious values.
 
 ### 7.32 MCP output size limit — large responses auto-save to file
 

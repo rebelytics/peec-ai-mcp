@@ -7,7 +7,7 @@ Thanks for helping keep this skill accurate. It's meant to evolve as Peec's prod
 - **Corrections** — anything in `SKILL.md` that's wrong, outdated, or misleading.
 - **New tools / parameters** — if Peec ships a new tool or adds parameters to an existing one, open a PR.
 - **Recipes** — common analytical workflows that deserve to be captured as named recipes in §8.
-- **Gotchas** — data-interpretation pitfalls, or client-specific setup footguns (like Cowork's separate connector list), that would confuse an agent into producing wrong analysis. These go in §7. §2 defers to Peec's official install docs; don't duplicate that content.
+- **Gotchas** — data-interpretation pitfalls, or client-specific setup footguns that would confuse an agent into producing wrong analysis. These go in §7. §2 defers to Peec's official install docs; don't duplicate that content.
 
 ## What's out of scope
 
