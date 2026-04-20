@@ -1,7 +1,7 @@
 ---
 name: peec-ai-mcp
-description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load this skill whenever the user mentions Peec, Peec AI, peec.ai, the Peec MCP server, AI visibility monitoring via Peec, or asks the agent to pull visibility / brand / domain / URL / chat data from Peec. Also trigger on mentions of `peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`, or any of the Peec MCP tool names (list_brands, get_brand_report, get_domain_report, get_url_report, get_chat, get_url_content, get_actions, etc.). This skill teaches agents the real behaviour of the Peec MCP — including gotchas that the official docs either omit or get wrong.
-version: 1.0.0
+description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load this skill when the user is doing Peec reporting, analysis, or multi-step work — visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups (creating/updating/deleting brands, prompts, topics, tags), or invoking the Peec slash commands (`peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`). Also load when the user asks about Peec data interpretation (sentiment, position, visibility, share of voice, retrieval vs citation, the broken `get_actions` tool) or is combining two or more Peec tools in a single analysis. Value scales with task complexity — for trivial single-tool lookups like `list_projects`, `list_brands`, or `list_topics` where Peec's own tool descriptions suffice, the skill can be skipped. This skill teaches agents the real behaviour of the Peec MCP, including gotchas the official docs omit or get wrong.
+version: 1.0.1
 license: CC-BY-4.0
 origin: https://github.com/rebelytics/peec-ai-mcp
 maintainer: Eoghan Henn / rebelytics (eoghan@rebelytics.com)
@@ -610,7 +610,7 @@ Concrete examples:
 
 An agent building a segmentation filter who only knows the five "obvious" values will silently exclude a material slice of domains — often including the `REFERENCE` bucket that matters most for authority-gap work. Always enumerate the full eight-value set when filtering.
 
-### 7.31 `get_url_report.classification` has 11 values (10 observed + 1 schema-declared)
+### 7.31 `get_url_report.classification` has 11 values (10 observed + 1 schema-declared) — and isn't filterable server-side
 
 Parallel to §7.30, the URL classification enum is also larger than most narrative examples suggest. Observed values:
 
@@ -621,7 +621,11 @@ PROFILE, DISCUSSION, HOW_TO_GUIDE, ARTICLE, OTHER
 
 Client-side schema validation reveals one additional value — `ALTERNATIVE` — that exists in the schema but rarely appears in live data. Full documented enum is therefore 11 values.
 
-Recipe §8.2b (URL-level gap analysis) depends on filtering by these values; an agent that filters to `[LISTICLE, COMPARISON]` only will miss gap rows with classifications like `ARTICLE` or `HOW_TO_GUIDE` that are equally relevant to AI-search visibility. Pick the slice deliberately from the full enum, don't default to the two obvious values.
+**`get_url_report` does not accept `url_classification` (or `classification`) as a filter field.** The supported filter enum on the URL report is: `model_id, model_channel_id, tag_id, topic_id, prompt_id, country_code, chat_id, domain, url, mentioned_brand_id, mentioned_brand_count, gap`. Classification is returned as a *column* on every row, so you filter client-side after the response lands. Any recipe that appears to "filter by classification" is really pulling a broad URL set (typically via `gap >= 2`) and then narrowing the returned rows client-side. If an agent tries to pass `{field: url_classification, …}` to `get_url_report`, the tool will reject the call with a schema-validation error.
+
+The same applies to `get_domain_report` — it exposes a `classification` column (§7.30) but no classification filter. Scope by domain name (from `list_brands.domains` or step-1 results) rather than by classification.
+
+Recipe §8.2b (URL-level gap analysis) depends on picking among these values after the fact; an agent that narrows to `[LISTICLE, COMPARISON]` only will miss gap rows with classifications like `ARTICLE` or `HOW_TO_GUIDE` that are equally relevant to AI-search visibility. Pick the slice deliberately from the full enum, don't default to the two obvious values.
 
 ### 7.32 MCP output size limit — large responses auto-save to file
 
@@ -742,25 +746,27 @@ Practical implication: do not build UI/validation logic on the assumption that n
 
 Never retry or treat this as a client-side bug. The data is intentional; the `list_brands` filter exclusion is by design (§7.8 cause 5).
 
-### 7.39 `get_domain_report` and `get_url_report` return different column types for the same-named metric
+### 7.39 `get_domain_report` and `get_url_report` use different column names and types for the same concept
 
-Peec's domain-level and URL-level reports **look similar** but have quietly divergent schemas for their quantitative columns:
+Peec's domain-level and URL-level reports **look similar** but have quietly divergent schemas. The retrieval-volume column is **named differently on each report** and has a different type, and the domain report's `_count` columns don't always appear in the default payload.
 
-| Column | `get_domain_report` | `get_url_report` |
+| Concept | `get_domain_report` | `get_url_report` |
 |---|---|---|
-| `retrieval_count` | **float** (aggregated retrievals weighted across chats) | **integer** (raw count of retrievals for this URL) |
-| `citation_count` | **float** | **integer** |
-| `retrieval_rate` | float (Rate, can exceed 1.0 — see §7.37) | float (Rate) |
-| `citation_rate` | float | float |
-| `mention_count` | integer | integer |
+| Retrieval volume | `retrieval_count` — **float** (aggregated retrievals weighted across chats) | `retrievals` — **integer** (raw count of retrievals for this URL) |
+| Citation volume | `citation_count` — **float** | `citation_count` — **integer** |
+| Retrieval rate | `retrieval_rate` — float (Rate, can exceed 1.0 — see §7.37) | not returned |
+| Citation rate | `citation_rate` — float | `citation_rate` — float |
+| Mentions | `mention_count` — integer | not applicable |
 
-**Practical implication.** Code that reads from both reports and assumes "retrieval_count is an int" will crash when it hits the domain report (which returns decimals like `12.5` for aggregated retrievals). Conversely, code that expects a decimal from the URL report is harmless but misleading — you'll get integer arithmetic where you expected a ratio.
+The actual column set on the default `get_url_report` (no dimension, no filter) observed in practice is: `url, classification, title, channel_title, citation_count, retrievals, citation_rate, mentioned_brand_ids`. Note the **absence** of `retrieval_count` and `retrieval_rate` — those live on the domain report only. The URL report's equivalent is the `retrievals` column (plain integer count) plus the derived `citation_rate`.
 
-**Additional column-visibility caveat:** `retrieval_count` and `citation_count` **may not appear in the default, undimensioned `get_domain_report` response** — observed runs returned only `retrieved_percentage`, `retrieval_rate`, and `citation_rate`. The count columns surface on dimensioned queries (e.g. `dimensions=[model_id]`) and on the URL-level report. If you need "top domains by retrieval volume" without a dimension, sort on `retrieved_percentage` (Ratio) rather than `retrieval_count`. See §8.10 step 1 for the corrected recipe.
+**Practical implication.** Code that reads from both reports and assumes a single shared column name like `retrieval_count` will silently miss URL-report data (the column doesn't exist there) or crash on the domain report (the column is there but it's a float, not an int). Always check the actual column list returned before writing aggregation logic.
 
-**Cause (inferred, not confirmed):** the domain report aggregates across URLs at the same domain and weights by chat participation; the URL report reports per-URL discrete retrievals. The aggregation produces floats naturally.
+**Additional column-visibility caveat on the domain report:** `retrieval_count` and `citation_count` **may not appear in the default, undimensioned `get_domain_report` response** — observed runs returned only `retrieved_percentage`, `retrieval_rate`, and `citation_rate`. The count columns surface on dimensioned queries (e.g. `dimensions=[model_id]`). If you need "top domains by retrieval volume" without a dimension, sort on `retrieved_percentage` (Ratio) rather than `retrieval_count`. See §8.10 step 1 for the corrected recipe.
 
-**Defensive pattern:** parse both reports through a type-coercion layer that explicitly accepts `int | float` for the `_count` columns and only treats `_rate` columns as rates. Don't assume schema symmetry across the two endpoints.
+**Cause (inferred, not confirmed):** the domain report aggregates across URLs at the same domain and weights by chat participation, which produces floats naturally; the URL report reports per-URL discrete retrievals as integers. The naming divergence (`retrieval_count` vs `retrievals`) looks like the URL-level column was renamed at some point and the domain-level one wasn't, or vice versa. Either way, **treat the two column names as non-interchangeable**.
+
+**Defensive pattern:** when writing code that touches both reports, inspect `columns[]` on each response and map to a normalised internal key (e.g. both `retrieval_count` and `retrievals` → `retrieval_volume`), coercing to `float` uniformly. Don't assume schema symmetry across the two endpoints.
 
 ---
 
@@ -1011,9 +1017,11 @@ get_url_report(project_id, start_date, end_date,
   outreach targets, PR/digital-PR opportunities.
 
 # 4. OWNED gap (our own pages underperforming relative to peers)
+# get_url_report has no url_classification filter — filter by the
+# own brand's domain list instead (pulled from list_brands above).
 get_url_report(project_id, start_date, end_date,
-               filters=[{field: url_classification, operator: in,
-                         values: ["OWN"]}],
+               filters=[{field: domain, operator: in,
+                         values: [<own_brand.domains entries>]}],
                limit=20)
 → our own pages that are retrieved but rarely cited, or retrieved
   on fewer engines than comparable competitor pages.
@@ -1021,6 +1029,8 @@ get_url_report(project_id, start_date, end_date,
   values can exceed 1.0) against the leaders in the EDITORIAL gap set.
   Low citation_rate on OWN pages = OWNED action candidates:
   pages to restructure, clarify, or rewrite to earn citations.
+  Note: own_brand.domains must include every TLD the company operates
+  on (§7.10) — if .com is missing, the recipe will miss .com pages.
 
 # 5. Domain-level source authority (who else is being cited heavily?)
 get_domain_report(project_id, start_date, end_date,
@@ -1095,9 +1105,11 @@ get_domain_report(project_id, start_date, end_date,
 # and citation_rate (Rate) — but does NOT expose retrieval_count as a
 # sortable column in the default response. Always sort the breadth view
 # on retrieved_percentage. retrieval_count and citation_count DO appear on
-# dimensioned or URL-level responses (§7.39), where you can sort on them
-# directly. If a sort-by-count call returns a schema error or empty rows,
-# fall back to retrieved_percentage.
+# dimensioned domain responses, where you can sort on them directly.
+# URL-level responses use a different column name — `retrievals` (integer)
+# rather than `retrieval_count` — see §7.39 for the full mapping.
+# If a sort-by-count call returns a schema error or empty rows, fall back
+# to retrieved_percentage.
 
 # 2. Classification mix
 Same call; group rows by classification (§7.30 — 8 values).
@@ -1110,10 +1122,16 @@ retrievals — useful framing data.
 # 3. Authority-vs-citation sanity check
 Read citation_rate column (not retrieval_rate; §7.37 Rate type —
 values can exceed 1.0). Sort descending.
-Domains with high retrieval_count + low citation_rate are "skimmed
-but not quoted" — weak authority signal despite frequent retrieval.
-Domains with low retrieval_count + high citation_rate are "quoted
-when reached" — strong per-visit authority.
+Pair citation_rate against retrieved_percentage (the breadth metric
+available on the default response).
+Domains with high retrieved_percentage + low citation_rate are
+"skimmed but not quoted" — weak authority signal despite frequent
+retrieval.
+Domains with low retrieved_percentage + high citation_rate are
+"quoted when reached" — strong per-visit authority.
+(If you need absolute counts instead of percentages, re-run step 1
+with dimensions=[model_id] to expose retrieval_count and
+citation_count — see §7.39.)
 
 # 4. Gap layer — who's citing competitors but not us?
 get_domain_report(filters=[{gap >= 1}], limit=20)
@@ -1124,11 +1142,18 @@ targets — they're already authoritative AND already citing
 competitors.
 
 # 5. Own-domain health check
-get_domain_report with filters=[{url_classification OR domain
-                                  classification = OWN}]
+# get_domain_report doesn't expose a classification filter, so scope
+# by the own brand's domain list (from list_brands) instead.
+get_domain_report(project_id, start_date, end_date,
+                  filters=[{field: domain, operator: in,
+                            values: [<own_brand.domains entries>]}])
 → our own domains' retrieval + citation rates over the period.
 If citation_rate is low despite high retrieval_rate, we have an
 internal content problem (§8.8 OWNED action path).
+(The `classification` column in the response tells you how Peec
+tagged each domain — CORPORATE/OWN/etc., §7.30 — but you can't
+filter on it at query time; the own-domain list from list_brands
+is the reliable scoping mechanism.)
 ```
 
 **Key interpretive note.** Don't confuse `retrieval_rate` and `citation_rate`: both are Rate type (§7.37) and can exceed 1.0. A `citation_rate` of 1.8 on a domain means "on average, 1.8 distinct URLs from this domain are cited per chat that cites anything from this domain". It's a per-visit density measure, not a "share of chats" ratio. If you write "cited X% of the time", you'll be wrong in a way that superficially reads right.
