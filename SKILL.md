@@ -1,7 +1,7 @@
 ---
 name: peec-ai-mcp
 description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load when the user does Peec reporting, analysis, or multi-step work — visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups (brands, prompts, topics, tags), or Peec slash commands (`peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`). Also load for Peec data interpretation (sentiment, position, visibility, share of voice, retrieval vs citation, broken `get_actions`) or when combining two or more Peec tools. Skip for trivial single-tool lookups like `list_projects`, `list_brands`, `list_topics` where Peec's own tool descriptions suffice. Teaches agents the real behaviour of the Peec MCP, including gotchas the official docs omit or get wrong.
-version: 1.0.2
+version: 1.1.0
 license: CC-BY-4.0
 origin: https://github.com/rebelytics/peec-ai-mcp
 maintainer: Eoghan Henn / rebelytics (eoghan@rebelytics.com)
@@ -99,8 +99,11 @@ Run through this eight-item check before putting Peec figures in front of a huma
 4. **Dimensions and filters validated against the tool schema, not guessed.** `get_brand_report` valid dimensions: `prompt_id, model_id, model_channel_id, tag_id, topic_id, date, country_code, chat_id`. `brand_id` is filter-only, never a dimension. See §7.15 / §8.1.
 5. **Column names confirmed against the actual response payload.** Don't assume a column exists because a recipe says to sort on it. Default undimensioned `get_domain_report` returns `retrieved_percentage`, `retrieval_rate`, `citation_rate` — not `retrieval_count`. See §7.39 / §8.10.
 6. **Inactive engines flagged, not reported as zero visibility.** Check `list_models(is_active=true)` before claiming a brand is invisible on Perplexity/Claude/Gemini. See §7.1 / §7.8.
-7. **Empty results diagnosed against the five-cause list in §7.8** before concluding anything is broken. Soft-deleted brands, inactive engines, parametric answers, plan limits, and filter-mismatch all look the same on the surface.
+7. **Empty results diagnosed against the six-cause list in §7.8** before concluding anything is broken. Soft-deleted brands, inactive engines, parametric answers, plan limits, filter-mismatch, and engine-returned empty-response bodies all look the same on the surface.
 8. **Unresolved `kw_…` IDs flagged as soft-deleted**, not as bugs. See §7.38.
+9. **Engine-returned empty-response chats flagged, not silently absorbed into non-mention aggregates.** Where the frequency is non-trivial, filter them out of visibility/SoV denominators or report them as a separate "engine no-answer" rate. See §7.8 cause 6 and §7.37 caveat.
+10. **Dimension labels confirmed present before reporting per-dimension breakdowns.** `get_brand_report` with `dimensions=[model_id]` can return the correct number of rows with `model_id: null` on every row (observed especially on projects with `volume_status: QUEUED`). Cross-reference row count against `list_models(is_active=true)` and verify label population before attributing metrics to engines. See §7.40.
+11. **Fanout data scope confirmed per engine before drawing cross-engine conclusions.** `list_search_queries` returns zero rows for AI Overview (`google-0`), AI Mode (`google-1`), and Copilot (`microsoft-0`); ChatGPT (`openai-0`) and Grok (`xai-0`) are confirmed to return fanout. Other engines haven't been tested — verify empirically before relying on fanout for any engine not in that list. Don't report "what the AI searches for" as an engine-agnostic signal. See §7.41.
 
 If any item fails, stop and fix before reporting. Partial passes produce partial trust.
 
@@ -377,16 +380,18 @@ Practical guidance: don't reconstruct "how many chats are expected" from simple 
 
 In a multi-dimension breakdown (e.g. model × topic), `visibility_total` differs per cell. Google AI Overview in particular only triggers for some queries, so its denominator is smaller than ChatGPT's in the same topic. If you compute share-of-voice by summing across cells, normalise carefully.
 
-### 7.8 Empty results have five possible causes
+### 7.8 Empty results have six possible causes
 
-An empty `rows: []` response means one of:
+An empty `rows: []` response — or an apparent "brand not mentioned" chat —
+means one of:
 1. No data actually exists for the filter.
 2. The filter contains a typo or stale ID (non-existent `prompt_id`, `brand_id`, etc.).
 3. The filter targets an inactive model on the user's plan.
 4. **The date range is before the platform had data or in the future.** Report tools with a `start_date` that's far future or far past (e.g. `2030-01-01`, `2015-01-01`) return clean empty envelopes, not errors.
 5. **The filter targets a soft-deleted entity.** Soft-deleted brands, prompts, topics, and tags still exist in the system but are excluded from filter matches. `list_chats(brand_id=<deleted>)` returns empty — identical in shape to "no activity".
+6. **The engine itself returned an empty or placeholder response body** (e.g. `"No response."` as the entire chat body). The engine didn't fail to find your brand — it failed to answer. Detectable only by reading the chat payload via `get_chat`; aggregate fields treat it identically to "brand not mentioned". Distinguish from parametric-memory chats (engine answered, just didn't fetch sources) and from engine-wide outages (sister prompts from the same project/engine/day answered normally).
 
-Peec returns a clean empty array in all five cases — no error, no warning. Before reporting "no data", validate filter IDs by listing first (which excludes soft-deleted entities, so a missing ID in `list_*` is itself a signal) and sanity-check the date range against the platform's real coverage window.
+Peec returns a clean empty array (or counts the chat as a non-mention) in all six cases — no error, no warning. Before reporting "no data", validate filter IDs by listing first (which excludes soft-deleted entities, so a missing ID in `list_*` is itself a signal), sanity-check the date range against the platform's real coverage window, and for low-visibility chats spot-check `get_chat` payloads for empty bodies.
 
 ### 7.9 Auto-selected competitors on project creation are often wrong
 
@@ -730,6 +735,8 @@ Practical implication: do not build UI/validation logic on the assumption that n
 - When concatenating values into prose, scale explicitly — "visibility of 32% (0.32 on the wire)" is safer than "visibility of 0.32" or "visibility of 32".
 - If you encounter a column not in the table above, sample its values across several rows: a column with values consistently between 0 and 1 is a Ratio; a column with values spread from 0 to 100 is likely a Score; a column with values ≥1 that correlate with a count column is likely a Rate or Count.
 
+**Caveat on Ratio denominators — engine-returned empty responses inflate "non-mention" counts.** `visibility` and `share_of_voice` are Ratios whose denominator is "chats in scope". That denominator includes chats where the engine returned an empty or placeholder response body (see §7.8 cause 6) — i.e. the engine didn't fail to surface the brand, it failed to answer at all. Where empty-response frequency is non-trivial, either (a) filter those chats out of the denominator before reporting, or (b) surface an "engine no-answer rate" alongside visibility so the reader can see the distinction. The headline number alone will understate true brand visibility by roughly the empty-response rate.
+
 ### 7.38 Aggregated reports may reference brand IDs that `list_brands` no longer returns
 
 `get_domain_report` and `get_url_report` include a `mentioned_brand_ids` array (and `mentioned_brand_count` column) that record every tracked brand that co-appeared in the responses indexed by that domain/URL. This array can contain brand IDs that **do not appear in the current `list_brands` output** — typically 1–3 extra IDs.
@@ -767,6 +774,102 @@ The actual column set on the default `get_url_report` (no dimension, no filter) 
 **Cause (inferred, not confirmed):** the domain report aggregates across URLs at the same domain and weights by chat participation, which produces floats naturally; the URL report reports per-URL discrete retrievals as integers. The naming divergence (`retrieval_count` vs `retrievals`) looks like the URL-level column was renamed at some point and the domain-level one wasn't, or vice versa. Either way, **treat the two column names as non-interchangeable**.
 
 **Defensive pattern:** when writing code that touches both reports, inspect `columns[]` on each response and map to a normalised internal key (e.g. both `retrieval_count` and `retrievals` → `retrieval_volume`), coercing to `float` uniformly. Don't assume schema symmetry across the two endpoints.
+
+### 7.40 `get_brand_report` dimension columns may return null labels (observed on `model_id`)
+
+When calling `get_brand_report` with `dimensions=[model_id]`, the response
+may contain the correct number of rows (one per active engine) but with
+`model_id: null` on every row — the dimension is clearly functioning
+server-side (distinct aggregations per engine) but the label isn't
+populating. Observed on projects where prompts are in `volume_status:
+QUEUED` (e.g. within ~24h of the write that queued them); the underlying
+chats have correct `model.id` values when inspected via `get_chat`, so
+the aggregation layer is lagging behind the data layer rather than
+the data being absent.
+
+**Workarounds, in order of cleanness:**
+1. **Wait out the QUEUED window.** Re-run the dimensioned report after
+   the first full 24h processing cycle completes; labels typically
+   populate once the rollup catches up.
+2. **Cross-reference row count against `list_models(is_active=true)`.**
+   If the row count equals the active-engine count, you at least know
+   the dimension fired correctly; you just can't label rows by name.
+3. **Run separate filtered calls per `model_id`.** Call
+   `get_brand_report` once per engine with `filters=[{model_id: <id>}]`
+   — each call produces a single-row, self-labelling result.
+4. **Use `visibility_total` as a heuristic label.** Only reliable when
+   engines have materially different chat counts (e.g. AI Overview
+   typically has fewer chats than ChatGPT on the same project).
+   Unreliable when two engines have the same chat count.
+
+**Do not report per-engine breakdowns with null labels.** The data is
+there but unattributed; publishing an engine-level table with "Engine A,
+Engine B, Engine C" or with null in the engine column is a confident
+misreport. Pre-flight checklist item 10 enforces this.
+
+**Related observation, same report, different dimension:** treat every
+dimension with caution. Before attributing metrics to a dimension value,
+confirm the label column is populated in the returned payload.
+
+### 7.41 `list_search_queries` (fanout) returns zero for AI Overview, AI Mode, and Copilot — other engines vary
+
+`list_search_queries` is documented as "the sub-queries the AI engine
+fanned out to during retrieval" — but in practice some engines return
+zero rows no matter the date range or filter combination. Verified as
+of April 2026 across five production projects:
+
+| Engine (`model_id` / channel) | Fanout data? |
+| --- | --- |
+| AI Overview (`google-ai-overview-scraper` / `google-0`) | ✗ zero rows |
+| AI Mode (`google-ai-mode-scraper` / `google-1`) | ✗ zero rows |
+| Copilot (`microsoft-copilot-scraper` / `microsoft-0`) | ✗ zero rows |
+| ChatGPT (`chatgpt-scraper` / `openai-0`) | ✓ returns fanout |
+| Grok (`grok-scraper` / `xai-0`) | ✓ returns fanout |
+
+The three zero-row engines are the confirmed negatives — if your
+reporting scope includes any of them, `list_search_queries` will not
+help and you need to fall back to the `sources` array inside `get_chat`
+payloads for that engine's retrieval signal. The two confirmed positives
+(ChatGPT and Grok) are the engines we can currently rely on for fanout
+mining.
+
+**Every other engine — Perplexity, Gemini, the Claude models, DeepSeek,
+Llama, Sonar, the `grok-4` and `gpt-4o*` API variants, etc. — is
+untested.** They weren't active in any of the five projects tested, so
+nothing is known about whether they return fanout. Do not assume either
+way. Before relying on fanout for an engine not in the confirmed-positive
+list above, call `list_search_queries` filtered on that engine over a
+recent date range and verify `rowCount > 0`.
+
+The shape of the observed split is "full-trace chat engines expose
+fanout; SERP-style AI-answer surfaces don't", which is a plausible
+hypothesis but not a rule — the authoritative check is always a per-
+engine call, not an extrapolation from the observed pattern.
+
+**Implications:**
+- Fanout mining currently tells you what **ChatGPT and Grok** search
+  for. Whether it also covers other engines is unverified — state the
+  engine scope of any finding explicitly.
+- Topics where the own brand's visibility lives primarily on AI
+  Overview, AI Mode, or Copilot will have zero observable fanout — the
+  retrieval surface for those engines has to be inferred from the
+  `sources` array inside `get_chat` payloads, not from
+  `list_search_queries`.
+- Cross-engine conclusions drawn solely from fanout data are wrong by
+  construction. State the engine scope explicitly in any finding
+  derived from fanout, and flag any untested engines in the scope.
+
+**Recipe adjustment.** In §8.3 ("What's the AI engine actually searching
+for?"), the reliable answer currently covers ChatGPT and Grok. For AI
+Overview, AI Mode, and Copilot, fall back to the chat-level `sources`
+array as the retrieval signal. For any other engine, run a per-engine
+`list_search_queries` probe first.
+
+**Product feedback to flag upward.** `list_search_queries` should either
+surface fanout from all active engines or expose a `source_engine` /
+`engine_scope` field so the scope is discoverable without empirical
+probing. Until it does, the pre-flight checklist (item 11) enforces
+scope confirmation at the agent level.
 
 ---
 
@@ -918,6 +1021,16 @@ The two flows answer different questions. §8.2a: "where is our source authority
 ```
 
 This workflow is what transforms Peec from a dashboard into a research tool. Don't skip it — it's where the real insight lives.
+
+**Engine scope.** As documented in §7.41, `list_search_queries` returns
+zero rows for **AI Overview (`google-0`), AI Mode (`google-1`), and
+Copilot (`microsoft-0`)** — for those engines, step 2 will return
+nothing; use the chat-level `sources` array from step 3 as the
+retrieval signal instead. **ChatGPT (`openai-0`) and Grok (`xai-0`)**
+are the confirmed positives. Other engines (Perplexity, Gemini, Claude,
+etc.) haven't been tested — verify per-engine before relying on fanout
+for any of them. Phrase findings to name the engines they actually
+cover; don't say "what the AI searches for".
 
 **How many sample chats for a report?** For the composite "full report" flow (§8.0): **1 chat** for a quick check (illustrative colour), **1 chat** for a standard report (from the highest-mention-count engine — the most representative slice), **3 chats for a deep dive** (one per active engine to capture per-platform variation). For a standalone research session rather than a report, pull as many as budget allows and compare fanout patterns across prompts.
 
