@@ -1,7 +1,7 @@
 ---
 name: peec-ai-mcp
-description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load when the user does Peec reporting, analysis, or multi-step work — visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups (brands, prompts, topics, tags), or Peec slash commands (`peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`). Also load for Peec data interpretation (sentiment, position, visibility, share of voice, retrieval vs citation, broken `get_actions`) or when combining two or more Peec tools. Skip for trivial single-tool lookups like `list_projects`, `list_brands`, `list_topics` where Peec's own tool descriptions suffice. Teaches agents the real behaviour of the Peec MCP, including gotchas the official docs omit or get wrong.
-version: 1.1.0
+description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load when the user does Peec reporting, analysis, or multi-step work — visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups (brands, prompts, topics, tags), or Peec slash commands (`peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`). Also load for Peec data interpretation (sentiment, position, visibility, share of voice, retrieval vs citation, `get_actions` two-step workflow, `list_prompts.volume` ordinals, `get_url_content` 5-day refresh cadence) or when combining two or more Peec tools. Skip for trivial single-tool lookups like `list_projects`, `list_brands`, `list_topics` where Peec's own tool descriptions suffice. Teaches agents the real behaviour of the Peec MCP, including gotchas the official docs omit or get wrong.
+version: 1.2.0
 license: CC-BY-4.0
 origin: https://github.com/rebelytics/peec-ai-mcp
 maintainer: Eoghan Henn / rebelytics (eoghan@rebelytics.com)
@@ -102,7 +102,7 @@ Run through this eight-item check before putting Peec figures in front of a huma
 7. **Empty results diagnosed against the six-cause list in §7.8** before concluding anything is broken. Soft-deleted brands, inactive engines, parametric answers, plan limits, filter-mismatch, and engine-returned empty-response bodies all look the same on the surface.
 8. **Unresolved `kw_…` IDs flagged as soft-deleted**, not as bugs. See §7.38.
 9. **Engine-returned empty-response chats flagged, not silently absorbed into non-mention aggregates.** Where the frequency is non-trivial, filter them out of visibility/SoV denominators or report them as a separate "engine no-answer" rate. See §7.8 cause 6 and §7.37 caveat.
-10. **Dimension labels confirmed present before reporting per-dimension breakdowns.** `get_brand_report` with `dimensions=[model_id]` can return the correct number of rows with `model_id: null` on every row (observed especially on projects with `volume_status: QUEUED`). Cross-reference row count against `list_models(is_active=true)` and verify label population before attributing metrics to engines. See §7.40.
+10. **Dimension labels confirmed present before reporting per-dimension breakdowns.** `get_brand_report` with `dimensions=[model_id]` can return the correct number of rows with `model_id: null` on every row (observed especially within the first 24h after a `create_prompt` / `update_prompt` wave, before the daily aggregation has caught up). Cross-reference row count against `list_models(is_active=true)` and verify label population before attributing metrics to engines. See §7.40.
 11. **Fanout data scope confirmed per engine before drawing cross-engine conclusions.** `list_search_queries` returns zero rows for AI Overview (`google-0`), AI Mode (`google-1`), and Copilot (`microsoft-0`); ChatGPT (`openai-0`) and Grok (`xai-0`) are confirmed to return fanout. Other engines haven't been tested — verify empirically before relying on fanout for any engine not in that list. Don't report "what the AI searches for" as an engine-agnostic signal. See §7.41.
 
 If any item fails, stop and fix before reporting. Partial passes produce partial trust.
@@ -148,7 +148,7 @@ Before connecting, make sure the user has a Peec AI account (peec.ai) with at le
 | `get_domain_report` | Source-domain retrieval + citation rates |
 | `get_url_report` | Source-URL retrieval + citation rates + page classification |
 | `get_url_content` | Scraped markdown of any indexed source URL |
-| `get_actions` | Opportunity-scored recommendations (**broken as of April 2026 — see §7.12**) |
+| `get_actions` | Opportunity-scored recommendations — two-step workflow (`scope=overview` then drill down). Callable from pass-through clients despite empty declared schema; see §6.4 / §7.12 |
 
 ### Write / mutate (8)
 
@@ -269,7 +269,7 @@ When you're tracking a brand with complex naming variants (e.g. three word varia
 
 On `update_brand`, pass `regex: null` to clear an existing regex. The base Peec docs at `/identifying-your-competitors` describe aliases and regex at the brand-UI level but not specifically in the MCP tool context — this skill documents the MCP-side behaviour.
 
-### 6.4 Two-step `get_actions` workflow (when fixed)
+### 6.4 Two-step `get_actions` workflow
 
 Always call with `scope=overview` first — it returns *navigation metadata*, not recommendations. Then drill down per slice:
 
@@ -278,7 +278,7 @@ Always call with `scope=overview` first — it returns *navigation metadata*, no
 - `scope=reference` + `domain` (e.g. "wikipedia.org")
 - `scope=ugc` + `domain` (e.g. "reddit.com", "youtube.com")
 
-As of April 2026 the tool's MCP schema is empty, so the client strips the `scope` parameter and the server rejects the call. Workaround in §7.12.
+As of April 2026 this workflow is reliably callable from Cowork and other pass-through MCP clients despite the tool's declared JSON schema still being empty. Schema-strict clients strip the `scope` parameter before sending — on those, the server rejects with *"No matching discriminator: scope"*. See §7.12 for the full behavioural matrix and when to fall back to the local approximation recipe in §8.8.
 
 ### 6.5 Wave-based execution for bulk config changes
 
@@ -307,15 +307,31 @@ After `get_url_report`, feed interesting URLs into `get_url_content` to pull the
 
 An agent looping over `get_url_report` → `get_url_content` must branch on these two cases, not conflate them. The error-vs-null distinction is the reliable signal.
 
+**Response payload fields (April 2026).** A successful `get_url_content` response carries, in addition to the markdown body:
+
+- `content_updated_at` — ISO timestamp of the last scrape for this URL. Use this, not "now", as the as-of date when quoting the page back to a user.
+- `classification` — **domain-level** classification of the source (same enum as §7.30: `CORPORATE`, `EDITORIAL`, `INSTITUTIONAL`, `UGC`, `REFERENCE`, `COMPETITOR`, `OWN`, `OTHER`).
+- `url_classification` — **page-level** classification of this specific URL (same enum as §7.31: `HOMEPAGE`, `CATEGORY_PAGE`, `PRODUCT_PAGE`, `LISTICLE`, `COMPARISON`, `PROFILE`, `DISCUSSION`, `HOW_TO_GUIDE`, `ARTICLE`, `OTHER`, `ALTERNATIVE`).
+
+The dual classification matters: a page can be `EDITORIAL` at the domain level and `COMPARISON` at the page level, and the two enums never overlap. Don't conflate them; they answer different questions (who publishes this vs. what kind of page is it).
+
+**5-day refresh cadence.** Source-URL page content is re-scraped every ~5 days, **not daily** (confirmed by Peec staff in the MCP challenge Slack channel and verified empirically across 8 URL samples in April 2026 — `content_updated_at` values cluster into 5-day buckets). Implications:
+
+- For time-sensitive analysis (e.g. "what is this page saying right now?"), the content may be up to 5 days stale. Surface `content_updated_at` alongside any quoted content so the user knows the as-of date.
+- Re-running `get_url_content` more frequently than every 5 days returns the same payload — don't build re-fetch loops tighter than that.
+- A URL that returned `content: null` yesterday may return populated content today (first-encounter scrape can happen on any day); but once scraped, subsequent scrapes only happen on the 5-day cadence.
+
 ---
 
 ## 7. Data-literacy gotchas (READ THIS BEFORE REPORTING)
 
 These are things the official documentation either omits or gets wrong. Ignoring them produces confident-sounding but materially wrong analysis.
 
-### 7.1 `list_models` returns 19 engines; only `is_active: true` are tracked
+### 7.1 `list_models` returns 16 engines (schema `model_id` enum is 19); only `is_active: true` are tracked
 
-On lower-tier plans users select a subset of engines; the others return empty data. On a TRIAL-tier project, `is_active: true` typically holds for only 3 engines out of 19. Higher tiers unlock more. Filter on `is_active: true` before building engine breakdowns. Empty results for an inactive model look identical to "no data exists" — there's no error.
+The MCP's `model_id` filter/dimension enum on report tools lists 19 values as of April 2026 (adds `claude-haiku-4.5`, `claude-sonnet-4`, `grok-4`, `google-ai-mode-scraper`, `google-ai-overview-scraper`, `microsoft-copilot-scraper` on top of the legacy set). `list_models` returns 16 of these — the 3 omitted are engines that exist in the enum but aren't yet surfaced through the listing tool. Filter on `is_active: true` before building engine breakdowns. On lower-tier plans users select a subset of engines; the others return empty data. On a TRIAL-tier project, `is_active: true` typically holds for only 3 engines out of 16. Higher tiers unlock more. Empty results for an inactive model look identical to "no data exists" — there's no error.
+
+**Practical implication.** If you build a report from the `model_id` filter enum (19 values) instead of from `list_models` (16 values), three of those engines will return clean empty envelopes regardless of plan tier — treat them the same way you'd treat any other inactive engine: skip, don't report as "zero visibility". If the user asks about one of the three non-listed engines (`claude-sonnet-4`, `claude-haiku-4.5`, `grok-4` on most projects), tell them it's not available via the MCP's listing surface even though the enum accepts it.
 
 ### 7.2 `*-scraper` models measure consumer behaviour; raw model IDs measure API responses
 
@@ -370,7 +386,7 @@ Peec's `/understanding-chats` docs describe the cadence as "daily" and `/setting
 
 Likely explanations — not conclusively verified:
 
-- **Model channels multiply the count.** Each model (e.g. `gpt-4o`) can have multiple channels (`openai-0`, `openai-1`, etc.) representing different regional/setting variants. `list_chats` filters by `model_id`, but each model may emit several chats per day from different channels.
+- **Model channels multiply the count.** Each model (e.g. `gpt-4o`) can have multiple channels (`openai-0`, `openai-1`, etc.) representing different regional/setting variants. `list_chats` filters by `model_id`, but each model may emit several chats per day from different channels. The full `model_channel_id` enum observed on report tools as of April 2026 is: `openai-0, openai-1, openai-2, perplexity-0, perplexity-1, google-0, google-1, google-2, google-3, anthropic-0, anthropic-1, deepseek-0, meta-0, xai-0, xai-1, microsoft-0` (16 channels across 8 providers).
 - **Back-fill on acceptance.** The "start running immediately" language suggests newly accepted prompts may be run multiple times shortly after acceptance to populate initial data.
 - **Error retries.** Failed prompt runs may re-run on the same day without being deduped in the chat count.
 
@@ -413,19 +429,30 @@ The docs state: *"All tools are read-only. The MCP server cannot modify your pro
 - Prefer `list_*` for verification after a write (since writes return either `{id: "…"}` for creates or `{success: true}` for updates/deletes — never an echo).
 - For experimentation, create a dedicated test project in Peec so writes don't pollute production data.
 
-### 7.12 `get_actions` MCP schema is empty — prefer §8.8 for reliable results
+### 7.12 `get_actions` MCP schema is empty — the tool is still callable, but reviewers will strip params
 
-The tool description documents `scope`, `project_id`, `start_date`, `end_date`, `url_classification`, `domain` as required/optional parameters. The actual declared JSON schema is empty (`{properties: {}, type: "object"}`). What happens when you call it depends on the MCP client:
+**Status update (April 2026, re-verified):** `get_actions` is reliably callable from Cowork and other pass-through clients. Earlier versions of this skill described the tool as "broken" — that was a client-behaviour issue, not a server-side outage. The server-side two-step workflow works; the agent just has to be aware that the MCP tool's JSON schema is empty and some clients will strip parameters before sending.
 
-- **Schema-strict clients** (most of them) strip all parameters before sending, so the server rejects with *"No matching discriminator: scope"*. The call fails outright.
-- **Pass-through clients** send the params anyway. The server then accepts some scopes and rejects others: `scope=editorial`, `scope=reference`, `scope=ugc` commonly return data; `scope=owned` is more fragile and often returns 422. Results are inconsistent between clients and across projects.
+**Behaviour by scope, re-confirmed April 2026:**
 
-Either way, the description field is **more polished than the tool is reliable**. It walks through the two-step workflow, explains the `scope=overview` / `scope=detailed` split, lists the classification enums, and gives mapping rules — reading it, you'd reasonably assume the tool is production-ready. The schema and the observed behaviour say otherwise. Trust the schema and the §8.8 fallback, not the description.
+| Call | Status | Returns |
+|---|---|---|
+| `get_actions(scope=overview)` | ✓ works | Navigation metadata — counts and breakdowns by `url_classification` and `domain`, used to plan drill-down calls |
+| `get_actions(scope=owned)` | ✓ works | Own-domain URL actions (requires no extra params) |
+| `get_actions(scope=editorial, url_classification=<value>)` | ✓ works | Third-party editorial pages at that URL classification |
+| `get_actions(scope=reference, domain=<value>)` | ✓ works | Reference-site (e.g. wikipedia.org) actions for that domain |
+| `get_actions(scope=ugc, domain=<value>)` | ✓ works | UGC-site (e.g. reddit.com, youtube.com) actions for that domain |
 
-**Workarounds:**
-- **Preferred: approximate `get_actions` locally** — full step-by-step recipe in §8.8. Produces EDITORIAL and OWNED action lists directly from `get_domain_report` + `get_url_report`, with no dependency on `get_actions` working.
-- **Client-dependent fallback:** on a pass-through client, try the specific scopes (`editorial`, `reference`, `ugc`) individually. Expect `owned` to fail most of the time. Do not rely on this path for reproducible workflows — treat any successful call as a bonus, not a guarantee.
-- Report the empty schema to `support@peec.ai` so the properties field gets populated.
+The two-step workflow is: call `scope=overview` first to see which slices have data, then drill down by scope + the corresponding extra parameter. Full recipe in §6.4.
+
+**Known client-layer caveat.** The tool's declared JSON schema is still empty (`{properties: {}, type: "object"}`). Schema-strict MCP clients strip all parameters before sending, and the server then rejects with *"No matching discriminator: scope"*. If you see that error, you're on a client that's stripping params — switch clients or use the §8.8 workaround. Cowork and other pass-through clients send the params through and the call succeeds.
+
+**When to use §8.8 (approximate locally) instead:**
+- Running on a schema-strict client that strips params.
+- Want a single composite output without chaining 4–5 scoped calls.
+- Need the OWNED view on a project where `scope=owned` happens to be flaky (rare, but previously observed — spot-check first).
+
+For most pass-through client sessions, prefer calling `get_actions` directly now. Report the empty schema to `support@peec.ai` so the `properties` field gets populated and schema-strict clients stop breaking.
 
 ### 7.13 `update_prompt` cannot change prompt text
 
@@ -594,6 +621,8 @@ This is almost certainly a label-sync lag in Peec's internal model catalog. The 
 - `citationPosition`
 
 Every other endpoint in the MCP surface (`list_prompts`, `get_brand_report`, `get_domain_report`, `get_url_report`, etc.) uses `snake_case`. Additionally, the chat payload carries a `model_channel` object (`{id: "xai-0"}` etc.) alongside `model` (`{id: "grok-scraper"}`). This field matches the `model_channel_id` filter/dimension but is not otherwise documented.
+
+**`model_channel` is the authoritative handle for fanout joins.** For fanout inspection on a specific chat, read `get_chat.model_channel.id` from the chat payload and pass it to `list_search_queries` (filter on `model_channel_id`). **Do not rely on `get_chat.queries`** — that field is often empty even when the chat had fanout that's visible via `list_search_queries`. The chat payload's `queries` field and the separate `list_search_queries` endpoint are not guaranteed to agree; the endpoint is the authoritative source, and `model_channel.id` is the key you need to join them.
 
 **Do not conflate `urlNormalized` with the removed `normalizedUrl` field** (§7.22). That one was on the Get URLs Report endpoint and is gone in v0.9.0. `urlNormalized` lives on the chat sources payload, is currently active, and is not scheduled for deprecation that this skill has seen.
 
@@ -781,16 +810,25 @@ When calling `get_brand_report` with `dimensions=[model_id]`, the response
 may contain the correct number of rows (one per active engine) but with
 `model_id: null` on every row — the dimension is clearly functioning
 server-side (distinct aggregations per engine) but the label isn't
-populating. Observed on projects where prompts are in `volume_status:
-QUEUED` (e.g. within ~24h of the write that queued them); the underlying
-chats have correct `model.id` values when inspected via `get_chat`, so
-the aggregation layer is lagging behind the data layer rather than
-the data being absent.
+populating. The underlying chats have correct `model.id` values when
+inspected via `get_chat`, so the aggregation layer is lagging behind the
+data layer rather than the data being absent.
+
+**Observable proxy for "recently queued" state.** Earlier versions of
+this skill referenced a `volume_status: QUEUED` field on prompts as the
+triggering condition. That field isn't exposed on `list_prompts` in
+the current MCP schema (§7.42), so don't rely on it as a gate. The
+observable signal that prompts are still being processed is
+simpler: **the first full 24-hour aggregation window after a
+`create_prompt` or `update_prompt` wave hasn't elapsed yet**. During
+that window, dimensioned reports may return null labels. Keep a
+client-side timestamp of when the last write-wave completed and use
+that as the gate.
 
 **Workarounds, in order of cleanness:**
-1. **Wait out the QUEUED window.** Re-run the dimensioned report after
-   the first full 24h processing cycle completes; labels typically
-   populate once the rollup catches up.
+1. **Wait out the processing window.** Re-run the dimensioned report
+   after the first full 24h processing cycle completes; labels
+   typically populate once the rollup catches up.
 2. **Cross-reference row count against `list_models(is_active=true)`.**
    If the row count equals the active-engine count, you at least know
    the dimension fired correctly; you just can't label rows by name.
@@ -871,6 +909,46 @@ surface fanout from all active engines or expose a `source_engine` /
 probing. Until it does, the pre-flight checklist (item 11) enforces
 scope confirmation at the agent level.
 
+**Re-verification cadence.** This table captures engine coverage as
+verified in April 2026. Peec may expand fanout coverage without
+announcement — re-probe the three zero-row engines on each major
+project-tune-up session, and treat any positive result as a bonus
+capability to integrate into §8.3. The authoritative check is always
+a live per-engine call, not a memory of the last table state.
+
+### 7.42 `list_prompts.volume` is a string ordinal, not an integer; `volume_status` is not exposed
+
+`list_prompts` returns a `volume` column per prompt as of April 2026 — the
+search-volume signal that was previously only visible in the Peec UI is now
+pullable via MCP. But two details about this field catch agents out:
+
+**1. `volume` is a string ordinal, not a number.** The published schema
+describes `volume` as a 1–5 integer. In practice the column is populated
+with lowercase string ordinals: `"very low"`, `"low"`, `"medium"`,
+`"high"`, `"very high"`. Code that assumes a numeric type will either
+coerce to NaN or throw. Treat the field as an enum of 5 ordered strings
+and map to integers client-side if you need numeric sorting.
+
+Observed distribution across projects tested in April 2026: the modal
+value on most projects is `"very low"`; `"very high"` is rare. Don't
+assume a normal distribution across the five ordinals.
+
+**2. `volume_status` is NOT a field on `list_prompts`.** Earlier skill
+text (now corrected in §7.40) referred to a `volume_status: QUEUED`
+field as a trigger for aggregation lag. That field is documented in
+some Peec materials but is not exposed on `list_prompts` in the current
+MCP surface. Do not filter or gate on `volume_status` — the column
+doesn't exist in responses and a schema-strict client will reject any
+filter referencing it. Use the observable proxy documented in §7.40
+(time since last `create_prompt` / `update_prompt` wave) instead.
+
+**Practical use for strategy work.** The `volume` ordinal is a load-bearing
+input for prompt-tracking strategy: a project where 90% of prompts are
+`"very low"` volume is over-indexed on niche prompts and needs
+high-volume head-term prompts added for commercial coverage. The
+companion `peec-ai-tracking-strategy-builder` skill (§9.1) uses this
+field directly in the volume-signal / allocation step.
+
 ---
 
 ## 8. Common recipes
@@ -879,7 +957,7 @@ The recipes below collectively cover Peec's six published primary use cases (per
 
 **Start here for the most common request type.** When a user says "give me a visibility report", "full report", "monthly report", or anything comparable, reach for the composite meta-recipe in **§8.0** first — it sequences the atomic recipes below into the three common depth tiers (quick / standard / deep).
 
-**Composite recipes** answer recurring multi-step questions that the atomics only partially cover: **§8.8** approximates the broken `get_actions` tool; **§8.9** is the full competitive gap analysis flow (strategic view, not just a URL list); **§8.10** is a source-authority audit (who's citing whom, and at what rate); **§8.11** is the safe test-entity lifecycle pattern for agent-driven experimentation.
+**Composite recipes** answer recurring multi-step questions that the atomics only partially cover: **§8.8** is a local fallback for `get_actions` when the native tool is unavailable (e.g. schema-strict client strips params — see §7.12); **§8.9** is the full competitive gap analysis flow (strategic view, not just a URL list); **§8.10** is a source-authority audit (who's citing whom, and at what rate); **§8.11** is the safe test-entity lifecycle pattern for agent-driven experimentation.
 
 ### 8.0 "Give me a full visibility report" (meta-recipe)
 
@@ -1104,9 +1182,9 @@ Why dry-run first: deletions are destructive, tag-set replacements are not appen
 
 **Count reconciliation as the completion check.** Track the arithmetic: initial prompt count − deletes + creates = expected final count. Verify with a paginated `list_prompts` read (see §7.18). This is faster and more reliable than spot-checking individual operations.
 
-### 8.8 Approximate `get_actions` locally (workaround recipe)
+### 8.8 Approximate `get_actions` locally (fallback recipe)
 
-`get_actions` is broken (§7.12). This recipe approximates its output using the tools that do work. Use it whenever a user asks "what specific actions should we take to improve visibility?" or anything that maps to Peec's Actions feature.
+Use this recipe when you can't rely on `get_actions` directly — schema-strict client strips params, scope=owned is flaky on the current project, or you want a single composite output instead of chaining 4–5 scoped calls. See §7.12 for when to prefer calling `get_actions` natively. This recipe approximates its output using the tools that do work. Also reach for it whenever a user asks "what specific actions should we take to improve visibility?" or anything that maps to Peec's Actions feature and you want a reproducible flow that doesn't depend on the tool's client-dependent behaviour.
 
 ```
 # 1. Establish baseline and scope
