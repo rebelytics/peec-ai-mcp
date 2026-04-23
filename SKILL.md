@@ -1,7 +1,7 @@
 ---
 name: peec-ai-mcp
 description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load when the user does Peec reporting, analysis, or multi-step work — visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups (brands, prompts, topics, tags), or Peec slash commands (`peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`). Also load for Peec data interpretation (sentiment, position, visibility, share of voice, retrieval vs citation, `get_actions` two-step workflow, `list_prompts.volume` ordinals, `get_url_content` 5-day refresh cadence) or when combining two or more Peec tools. Skip for trivial single-tool lookups like `list_projects`, `list_brands`, `list_topics` where Peec's own tool descriptions suffice. Teaches agents the real behaviour of the Peec MCP, including gotchas the official docs omit or get wrong.
-version: 1.3.0
+version: 1.4.1
 license: CC-BY-4.0
 origin: https://github.com/rebelytics/peec-ai-mcp
 maintainer: Eoghan Henn / rebelytics (eoghan@rebelytics.com)
@@ -104,6 +104,7 @@ Run through this eight-item check before putting Peec figures in front of a huma
 9. **Engine-returned empty-response chats flagged, not silently absorbed into non-mention aggregates.** Where the frequency is non-trivial, filter them out of visibility/SoV denominators or report them as a separate "engine no-answer" rate. See §7.8 cause 6 and §7.37 caveat.
 10. **Dimension labels confirmed present AND row count sanity-checked before reporting per-dimension breakdowns.** `get_brand_report` with a dimension set has two early-window failure modes: null-label rows (~24h post-write-wave, correct row count with `null` in the dimension column) and zero-rows entirely (~48h post-write-wave, observed on dimensioned queries combined with a `brand_id` filter). Cross-reference the row count against `list_models(is_active=true)` / `list_topics` / `list_tags`, verify the dimension column is populated, and if either check fails use the per-filter workaround (separate call per engine/topic/tag) or the tag-filter-without-dimension pattern (§7.40 workaround 5) before attributing metrics.
 11. **Fanout data scope confirmed per engine before drawing cross-engine conclusions.** `list_search_queries` returns zero rows for AI Overview (`google-0`), AI Mode (`google-1`), and Copilot (`microsoft-0`); ChatGPT (`openai-0`) and Grok (`xai-0`) are confirmed to return fanout. Other engines haven't been tested — verify empirically before relying on fanout for any engine not in that list. Don't report "what the AI searches for" as an engine-agnostic signal. See §7.41.
+12. **Write-time metric-type re-check before any number is typeset.** Items 1–2 fire when the number is first read from Peec. This item fires again when the number is typeset into a slide, email, or report — the point at which metric-type context most often evaporates. Before any Peec `position`, `visibility`, `share_of_voice`, `sentiment`, `retrieval_rate`, or `citation_rate` value is placed in a deliverable, re-read §7.37 and confirm the displayed framing matches the metric's scale. For `position` specifically: if the rendered presentation invites a higher-is-better reading — e.g., values ordered ascending without directional context, a "2.0 vs 2.8" comparison that reads like a score, or bold raw numerals without a "lowest = best" footnote — either flip the presentation (use ordinal labels `#1` / `#2` / `#3`, add a "lowest = best" caption) or replace the raw number with an ordinal. The same discipline applies to sentiment (`50 = neutral` must be explicit; a brand at 62 is not "62% positive"), and to `retrieval_rate` / `citation_rate` values that exceed 1.0 (which break a naïve percentage reading — see §7.37). This check has teeth because it names the specific failure pattern: the data is correct, the interpretation is inverted, and both look identical on the slide. See §7.37, §7.4.
 
 If any item fails, stop and fix before reporting. Partial passes produce partial trust.
 
@@ -378,6 +379,17 @@ Clients who report "position 1 in ChatGPT" based on this metric will materially 
 
 High-mention-count brands may have near-zero domain-report presence if the AI engine answers from memory — especially for well-known brands.
 
+**Why "well-known brands" in particular** — the brief phrase above covers a broader pattern worth naming directly. High-salience parametric fallback affects any query where the model has strong priors from its training data:
+
+- **Well-known brands** (the original case) — branded queries almost always trigger parametric responses on ChatGPT and, variably, Grok. The model has enough training data on the brand to answer without retrieving. Empirical case: a non-regulated e-commerce retailer observed 100% of sampled branded ChatGPT chats had `sources: []`, matched against ~20% retrieval on the same prompts via other engines.
+- **Well-known standards or concepts** — certification-body queries on named ISO standards, named legal frameworks, well-known technical standards. The model answers from training even when the brand in question is a niche certification body with a public profile.
+- **Commercial categories well-represented in pre-training** — tyres, shampoo, hotels, consumer electronics. Commercial queries can trigger parametric answers because the model has enough contemporary text about the category to answer without fetching.
+- **Regulated verticals** — cannabis, pharma, some legal-services jurisdictions, some financial products. The sharpest case of the pattern, plus a layer of refusal behaviour (§7.8 cause 7) that has to be sampled for separately.
+
+**Per-engine architecture** — the pattern is not symmetric across engines. ChatGPT (scraper and API) and Grok can skip retrieval entirely on high-salience queries; Perplexity, AI Overview, AI Mode, and Copilot are retrieval-first architectures and almost always populate `sources`. Claude falls between the two depending on the query. When a domain report looks sparse, don't assume "the brand isn't retrieved anywhere" — it may only mean "ChatGPT answered parametrically", and the retrieval-first engines in the roster still have useful retrieval data.
+
+**Strategic implication.** `get_domain_report` systematically under-represents parametric-heavy engines in the retrieval numbers while `get_brand_report` counts their mentions normally. When the two tell different stories — brand has high visibility but low retrieval — check the per-engine split before concluding anything about content authority. The `peec-ai-tracking-strategy-builder` §11.13 pattern library entry covers the strategic response (shift content-strategy focus to retrieval-based engines, set long-horizon expectations for parametric ones, prioritise training-data-influencing work for the parametric channel).
+
 **Sources vs citations distinction** (from Peec's own docs): "sources" are every URL an AI model *accesses* while answering a prompt; "citations" are the subset of sources that the model *explicitly references* in the final response text. Peec's reports separate retrieval count from citation count for every domain/URL — don't conflate the two.
 
 **Empirical-sampling rule for per-engine characterisation.** Engine behaviour is distributional, not categorical. Any per-engine characterisation that lands in a deliverable (deck claim, recommendation, strategic finding) must be grounded in a sample of `get_chat` responses drawn from the project's actual data — not from general "ChatGPT is parametric" / "AI Overview retrieves" assumptions.
@@ -472,6 +484,36 @@ The two-step workflow is: call `scope=overview` first to see which slices have d
 - Need the OWNED view on a project where `scope=owned` is returning 422 — see caveat above.
 
 For most pass-through client sessions, prefer calling `get_actions` directly now. Report persistent `scope=owned` 422s and the empty tool schema to `support@peec.ai`.
+
+**Data vs interpretation — the two trust surfaces in one payload.** `get_actions` returns two categories of content on every row, and they do not carry the same reliability:
+
+- **Data surface (reliable):** named URLs, named domains, gap percentages, opportunity scores, slice classifications (`url_classification`, `domain`, OWNED / EDITORIAL / REFERENCE / UGC). Peec knows which pages got retrieved and how often; trust the data.
+- **Interpretation surface (not reliable):** the generated action text ("Incorporate X into the homepage", "Mention your brand favorably on Reddit", "Take inspiration from Y's category pages"). Peec generates these algorithmically without any knowledge of the brand's positioning, sister-brand relationships, platform norms, or commercial context. The interpretation is generic and frequently wrong in specific ways.
+
+Anti-pattern actions to flag automatically and filter out before propagating to deliverables or writes:
+
+- **Homepage vocabulary stuffing.** "Incorporate '[niche vocabulary]' into the homepage copy." The homepage is the primary brand-positioning surface; stuffing it with vertical-specific vocabulary dilutes brand identity regardless of the opportunity score. The underlying signal (homepage doesn't register for the queried topic) is legitimate; the action is not. Propose a dedicated landing page or content hub instead.
+- **"Mention your brand favorably" on Reddit / UGC.** Always wrong. Platform anti-pattern that gets brands shadow-banned and generates negative community sentiment. The underlying signal (Reddit / forum thread is a high-retrieval surface where the brand is absent) is legitimate; the action framing is a platform violation. The correct action is organic community engagement over time, or no action.
+- **Inspiration from sister-brand pages.** When the "competitor" named in the action is a brand inside the same group or portfolio, the action is noise — not a competitive signal. Peec's brand model can't see corporate-family relationships. Filter these out at the Analyse step.
+- **PR targeting to `vergleich` / `best-of` / `bestbuy` domains without legitimacy check.** Peec classifies comparison and listicle sites as `EDITORIAL` or `COMPARISON` based on surface markers, but in commercial verticals many of these are affiliate-driven comparison plays, not genuine editorial publications. See the EDITORIAL/COMPARISON default below and the legitimacy verification chain in `peec-ai-tracking-strategy-builder` §13.17.
+
+Rule: **always extract the signal before acting on the interpretation**. When using `get_actions` output in a deliverable or as input to a Phase B deck, record separately (1) the signal (named URL, domain, opportunity score, gap %, slice classification), (2) the action as Peec phrases it, (3) whether the action survives commercial common-sense review. Actions that fail review should have their signal preserved — the data isn't wrong, the interpretation is. Do not let filtered actions pass through to writes or stakeholder output.
+
+**EDITORIAL / COMPARISON classification — affiliate-driven by default in commercial verticals.** Peec's `EDITORIAL` and `COMPARISON` classifications (on `get_actions` targets and on `get_url_report.classification`) are based on surface markers — article structure, editorial-looking content, visible comparison tables — and cannot see the affiliate monetisation layer underneath. In commercial verticals with high affiliate base rates, assume these targets are affiliate-driven until a browser check proves otherwise. Verticals where this default applies:
+
+- **E-commerce** across categories, especially in Germany (`-vergleich.de`, `beste-*.de`).
+- **Regulated categories** — cannabis, CBD, seed, nutra, gambling, finance affiliate stacks, VPN, hosting, web-tool roundups.
+- **SaaS review sites** — most "best X software" roundups carry affiliate links.
+
+Verification indicators (all three needed to classify as *genuine* editorial, not just "looks editorial"):
+
+- **No affiliate parameters on outbound links** (`?aff=…`, `?a_aid=…`, `/ref/…`, `#grower` fragments, redirects through adcell / awin1 / tradedoubler / daisycon / ShareASale / Impact / CJ / Rakuten).
+- **No commission / affiliate disclosure copy** ("provisionen", "as an affiliate", "partner programme", "we may earn a commission", "wir verdienen an qualifizierten Verkäufen").
+- **Visible editorial byline and editorial separation** from commercial interests (publication masthead, editorial ethics statement, non-commercial about page).
+
+When the verification fails, the action shape flips from PR outreach to **network-join**. The affiliate network — adcell, AWIN, Tradedoubler, Daisycon, ShareASale, Impact, CJ, Rakuten — is the vehicle, not the specific URL. Joining the relevant programme places the brand across every comparison site on that network that covers the category, at scale; site-by-site PR is the hard path. See `peec-ai-tracking-strategy-builder` §13.17.3 and §13.17.4 for the full critical-filter procedure and action-shape routing.
+
+**Two independent confirmed instances in a vertical flip the prior for that vertical.** Once the affiliate pattern is confirmed twice in a vertical, subsequent EDITORIAL / COMPARISON targets in that vertical should be routed to network-join by default, with the browser check escalated to confirmation only — not to establish the prior. Log the vertical-level prior in the findings file so later loops inherit it.
 
 ### 7.13 `update_prompt` cannot change prompt text
 
@@ -778,6 +820,8 @@ Practical implication: do not build UI/validation logic on the assumption that n
 - Render Rank with direction; never as a percentage.
 - When concatenating values into prose, scale explicitly — "visibility of 32% (0.32 on the wire)" is safer than "visibility of 0.32" or "visibility of 32".
 - If you encounter a column not in the table above, sample its values across several rows: a column with values consistently between 0 and 1 is a Ratio; a column with values spread from 0 to 100 is likely a Score; a column with values ≥1 that correlate with a count column is likely a Rate or Count.
+
+**Read-time vs write-time checks — run this rule twice, not once.** Applying the table above at the moment you read a number from Peec is necessary but not sufficient. Metric-type context decays rapidly as numbers move through intermediate workspaces (notebooks, spreadsheets, prose drafts) and into deliverables, and by the time a value is typeset in bold serif on a slide it reads as "just a number" — the Rank-vs-Score context has usually evaporated. The specific, recurring failure mode: a `position` of 2.0 presented next to a competitor's 2.8 reads as if the bigger number "wins", inverting reality. The fix is to re-run the metric-type check at write-time, not only at read-time. Pre-flight checklist item #12 ("Write-time metric-type re-check") formalises this; apply it before any Peec value is placed in a slide, email, report, or chart, whether the author is you or a collaborator. For Rank values specifically, prefer ordinal labels (`#1` / `#2` / `#3`) or an explicit "lowest = best" caption over raw decimal values in stakeholder-facing presentations — raw decimals invite the inversion.
 
 **Caveat on Ratio denominators — engine-returned empty responses inflate "non-mention" counts.** `visibility` and `share_of_voice` are Ratios whose denominator is "chats in scope". That denominator includes chats where the engine returned an empty or placeholder response body (see §7.8 cause 6) — i.e. the engine didn't fail to surface the brand, it failed to answer at all. Where empty-response frequency is non-trivial, either (a) filter those chats out of the denominator before reporting, or (b) surface an "engine no-answer rate" alongside visibility so the reader can see the distinction. The headline number alone will understate true brand visibility by roughly the empty-response rate.
 
@@ -1100,6 +1144,45 @@ This is the single most informative shape for a "we vs them" narrative — bette
 **Earlier drafts of this skill recommended `dimensions=[model_id, brand_id]`** for this pivot. That shape is rejected at the schema layer because `brand_id` isn't in the dimensions enum. The two-call pattern above replaces it.
 
 **Default window:** 30 days. Shorter (7 days) is only useful if the project has high chat volume; longer (90 days) smooths signal but hides recent shifts. For anything longer than 30 days, read §7.32 on the output-size cap before pulling. For full-report composition, see §8.0.
+
+### 8.1b Combined / group visibility — how to compute a multi-brand visibility figure correctly
+
+**Use when:** the user wants a single visibility number for a group of brands (own brand + sister brands + acquired brands), e.g. *"what's our group visibility?"*, *"combined share for our brand family"*, *"Portfolio X total mention share."*
+
+**The wrong answer (common):** sum per-brand visibility percentages across the group. *"Own brand 35% + sister 31% = group 66%"* — **mathematically wrong** in every case where a single chat can mention more than one of the grouped brands, because the rate metrics share a denominator and overlap on any chat where two brands co-appear. The sum is always an upper bound; the actual combined figure is between the single-brand max (35% here) and the sum. See §7.37 on Ratio-type metrics and the hard rule in `peec-ai-tracking-strategy-builder` §14.2.
+
+**The right answer:** query Peec directly with a combined-brand filter.
+
+```
+get_brand_report(
+  project_id,
+  filters=[{field: "brand_id", operator: "in", values: [brand_id_1, brand_id_2, brand_id_3]}],
+  start_date, end_date,
+  dimensions=[]      # undimensioned — or add model_id for per-engine split
+)
+→ visibility = chats in which ANY of the filtered brands appeared / total chats
+```
+
+Peec handles the chat-level union internally. The returned `visibility` is the correct combined-group figure — 35–66% in the example above, not 66%. The call also returns SoV, sentiment, position, mention counts for the group as a whole.
+
+**Alternative: compute the union manually.** Where the `in` filter isn't usable (old client shim, a brand entity not yet created in Peec, computing across project boundaries):
+
+```
+1. list_chats(project_id, brand_id=brand_id_1, limit=10000) → set A of chat_ids
+2. list_chats(project_id, brand_id=brand_id_2, limit=10000) → set B of chat_ids
+3. list_chats(project_id, brand_id=brand_id_3, limit=10000) → set C of chat_ids
+4. union = A ∪ B ∪ C
+5. total_chats = total in window (undimensioned brand report total, any brand filter)
+6. combined_visibility = |union| / total_chats
+```
+
+The manual computation gives the same answer as the combined-filter call, at the cost of three more API round trips. Prefer the combined-filter call when Peec supports it.
+
+**Applies to every rate metric, not just visibility.** The same problem — denominator shared across the cohort, overlap on chats where multiple brands co-appear — appears for any "% of chats" metric: SoV, retrieval share, citation share, mention rate. Apply the combined-filter pattern (or the union-of-chat-IDs pattern) for all of them.
+
+**Does NOT apply to:** sentiment and position, which are per-mention aggregates without a shared denominator. Averaging sentiment across a group is a different kind of wrong (unweighted mean of unequal mention counts) but the overlap error described here doesn't hit them. Compute group sentiment / position as weighted means over the union of mentions, not as cross-brand sums.
+
+**Reporting rule:** when a deliverable contains a group visibility figure, include a one-sentence provenance note naming the brand IDs that went into the filter (or the union) — so the stakeholder or a reviewing agent can check the composition. *"Group visibility (OwnBrand + SisterBrand + AcquiredBrand, April 1–30): 52%"* is defensible; *"Group visibility: 52%"* with no composition note is not.
 
 ### 8.2a Domain-level competitor analysis — "who's beating us at the source level?"
 
