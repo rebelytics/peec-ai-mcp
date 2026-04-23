@@ -1,7 +1,7 @@
 ---
 name: peec-ai-mcp
 description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load when the user does Peec reporting, analysis, or multi-step work — visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups (brands, prompts, topics, tags), or Peec slash commands (`peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`). Also load for Peec data interpretation (sentiment, position, visibility, share of voice, retrieval vs citation, `get_actions` two-step workflow, `list_prompts.volume` ordinals, `get_url_content` 5-day refresh cadence) or when combining two or more Peec tools. Skip for trivial single-tool lookups like `list_projects`, `list_brands`, `list_topics` where Peec's own tool descriptions suffice. Teaches agents the real behaviour of the Peec MCP, including gotchas the official docs omit or get wrong.
-version: 1.4.1
+version: 1.4.3
 license: CC-BY-4.0
 origin: https://github.com/rebelytics/peec-ai-mcp
 maintainer: Eoghan Henn / rebelytics (eoghan@rebelytics.com)
@@ -91,12 +91,12 @@ That's the minimum useful loop. For the full feature map, keep reading — §8 c
 
 ## Pre-flight checklist — before you report any numbers
 
-Run through this eight-item check before putting Peec figures in front of a human.
+Run through this twelve-item check before putting Peec figures in front of a human.
 
 1. **Metric type identified for every column.** Classify each numeric column as Ratio (0–1, multiply by 100), Score (0–100, neutral at 50 for sentiment), Rank (1+, lower is better), Rate (can exceed 1.0), or Count (integer). See §7.37. If you can't name the type, don't display the number.
 2. **Scale normalised to what the human expects.** Ratios rendered as percentages (`0.33` → `33%`, not `0.33%`). Sentiment left as 0–100 with `50 = neutral` explicit. Position left as a rank with "lower is better" called out. Rate kept as-is, with anomalies (`retrieval_rate=1.8`) explained rather than rewritten. See §7.3 / §7.37.
 3. **Position read as rank-among-tracked-brands, not overall.** Any position figure comes with the "among tracked competitors" qualifier. See §7.4.
-4. **Dimensions and filters validated against the tool schema, not guessed.** `get_brand_report` valid dimensions: `prompt_id, model_id, model_channel_id, tag_id, topic_id, date, country_code, chat_id`. `brand_id` is filter-only, never a dimension. See §7.15 / §8.1.
+4. **Dimensions and filters validated against the tool schema, not guessed.** `get_brand_report` valid dimensions: `prompt_id, model_id, model_channel_id, tag_id, topic_id, date, country_code, chat_id`. `brand_id` is filter-only, never a dimension. See §8.1.
 5. **Column names confirmed against the actual response payload.** Don't assume a column exists because a recipe says to sort on it. Default undimensioned `get_domain_report` returns `retrieved_percentage`, `retrieval_rate`, `citation_rate` — not `retrieval_count`. See §7.39 / §8.10.
 6. **Inactive engines flagged, not reported as zero visibility.** Check `list_models(is_active=true)` before claiming a brand is invisible on Perplexity/Claude/Gemini. See §7.1 / §7.8.
 7. **Empty results diagnosed against the seven-cause list in §7.8** before concluding anything is broken. Soft-deleted brands, inactive engines, parametric answers, plan limits, filter-mismatch, engine-returned empty-response bodies, and regulated-vertical content-policy refusals all look the same on the surface.
@@ -295,7 +295,7 @@ Between waves, run the appropriate `list_*` tool to verify state. Use this patte
 
 **Pre-fetch tag and topic IDs once per wave.** When a wave will issue many writes that reference the same set of tag or topic IDs (common in Wave 3 prompt creates), call `list_tags` and `list_topics` once at the start of the wave and hold the ID map in-memory for the whole batch. Inter-wave refetches are only required if an intervening wave created new tags/topics.
 
-The companion `peec-ai-project-tuneup` skill codifies this into a full methodology — load it when the user wants to overhaul a Peec project, not just query it.
+The companion [`peec-ai-tracking-strategy-builder`](https://github.com/rebelytics/peec-ai-tracking-strategy-builder) skill codifies this into a full methodology — load it when the user wants to overhaul a Peec project, not just query it.
 
 ### 6.6 Scraped content via `get_url_content`
 
@@ -538,7 +538,7 @@ This is especially important when scripting bulk retags — an unmerged call sil
 
 ### 7.15 `create_prompt` has no `language` field — only `country_code`
 
-Unlike Trakkr and Sistrix custom prompt tracking, Peec's `create_prompt` takes **only** a `country_code` (two-letter ISO, e.g. `DE`, `GB`, `US`) and the prompt text. Language is inferred from the text itself. Practical implication: when building multi-market prompt sets, you manage language at the level of the prompt text (write the German prompt in German; write the French prompt in French). There's no separate field to set.
+Unlike some other AI-visibility tools where custom prompt tracking exposes separate language and locale fields, Peec's `create_prompt` takes **only** a `country_code` (two-letter ISO, e.g. `DE`, `GB`, `US`) and the prompt text. Language is inferred from the text itself. Practical implication: when building multi-market prompt sets, you manage language at the level of the prompt text (write the German prompt in German; write the French prompt in French). There's no separate field to set.
 
 The allowed country codes are constrained to a fixed enum of **92 ISO 3166-1 alpha-2 codes** as of April 2026, covering most of Europe, the Americas, Middle East/North Africa, and Asia-Pacific. If your target country isn't on the list, the call will fail validation.
 
@@ -1272,7 +1272,7 @@ cover; don't say "what the AI searches for".
 
 ### 8.7 Full project tune-up (dry-run first)
 
-A tune-up is a systematic overhaul of an under-performing Peec project: replacing wrong brands, retagging prompts, deleting non-commercial prompts, adding revenue-informed new prompts. Load the companion `peec-ai-project-tuneup` skill for the methodology.
+A tune-up is a systematic overhaul of an under-performing Peec project: replacing wrong brands, retagging prompts, deleting non-commercial prompts, adding revenue-informed new prompts. Load the companion `peec-ai-tracking-strategy-builder` skill for the methodology.
 
 Minimum viable sequence, all captured in a dry-run document *before* any writes:
 
@@ -1370,7 +1370,7 @@ choosing a competitor on a high-value prompt. This is what turns a
 data list into an actionable narrative.
 ```
 
-**What this recipe does NOT do** (and why that's OK): it doesn't produce Peec's exact `url_classification` action types (OWNED/EDITORIAL/TECHNICAL). It produces the two categories that matter most in practice (EDITORIAL, OWNED) and skips TECHNICAL — which covers crawlability/indexing issues that usually come from external SEO tooling (Screaming Frog, Sitebulb, searchVIU) anyway, not from Peec data.
+**What this recipe does NOT do** (and why that's OK): it doesn't produce Peec's exact `url_classification` action types (OWNED/EDITORIAL/TECHNICAL). It produces the two categories that matter most in practice (EDITORIAL, OWNED) and skips TECHNICAL — which covers crawlability/indexing issues that usually come from external SEO tooling (Screaming Frog, Sitebulb, or equivalent crawlers) anyway, not from Peec data.
 
 **Expected runtime:** 6–9 MCP calls for a standard project. If the user then asks for "even more detail", chain §8.3 to pull sample chats from the action-list URLs so they can see the AI's actual framing of the competitive landscape.
 
