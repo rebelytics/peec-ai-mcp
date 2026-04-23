@@ -1,7 +1,7 @@
 ---
 name: peec-ai-mcp
 description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load when the user does Peec reporting, analysis, or multi-step work — visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups (brands, prompts, topics, tags), or Peec slash commands (`peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`). Also load for Peec data interpretation (sentiment, position, visibility, share of voice, retrieval vs citation, `get_actions` two-step workflow, `list_prompts.volume` ordinals, `get_url_content` 5-day refresh cadence) or when combining two or more Peec tools. Skip for trivial single-tool lookups like `list_projects`, `list_brands`, `list_topics` where Peec's own tool descriptions suffice. Teaches agents the real behaviour of the Peec MCP, including gotchas the official docs omit or get wrong.
-version: 1.2.0
+version: 1.3.0
 license: CC-BY-4.0
 origin: https://github.com/rebelytics/peec-ai-mcp
 maintainer: Eoghan Henn / rebelytics (eoghan@rebelytics.com)
@@ -25,7 +25,7 @@ Server URL: `https://api.peec.ai/mcp`
 Transport: Streamable HTTP
 Auth: OAuth 2.0 (browser consent, token persists)
 
-The surface is larger than the official docs suggest: **27 tools** (15 read-only, 8 write, 4 destructive), plus **7 slash-command "prompts"** that bundle pre-canned analyses. The official `/mcp/tools` docs page lists only 13 read tools and omits the write/destructive surface entirely (see §7.11 and §7.25).
+The surface is **27 tools** (15 read-only, 8 write, 4 destructive), plus **7 slash-command "prompts"** that bundle pre-canned analyses. Peec's own `/mcp/tools` reference page now enumerates all 27 tools correctly (15 read + 12 write, where Peec groups `create_*`/`update_*`/`delete_*` under a single "write" heading); earlier versions of this skill flagged the docs as incomplete, but that's been corrected upstream as of April 2026. This skill's value is in the data-interpretation subtleties and behavioural gotchas §7 catalogues, not in filling a missing tool list. Write-operation consent and verification patterns live in §7.11.
 
 ### Glossary of core terms
 
@@ -83,7 +83,7 @@ Assumes a Peec AI account (peec.ai) with at least one project, and an MCP-capabl
    - **Scales are mixed in the same row.** `visibility` and `share_of_voice` come back as **0–1 ratios** (multiply by 100 for percent). `sentiment` is already **0–100** (neutral = 50). `position` starts at **1** and lower is better. Don't treat all four as one scale. Details in §7.37.
    - **Position is rank among *tracked* brands, not overall.** A position of 1.6 means "1.6th in the competitor roster you configured", not "2nd overall in ChatGPT's full response". §7.4.
    - **Mentions include parametric answers.** Visibility counts every response where the brand name appears in text, including answers where the engine didn't fetch a single URL. Retrievals and citations count only real web fetches. §7.5.
-5. **Empty data ≠ broken tool.** Engines returning zeros are usually inactive on your plan (§7.1). Five distinct causes of empty results are catalogued in §7.8 — check that list before concluding "the tool is broken".
+5. **Empty data ≠ broken tool.** Engines returning zeros are usually inactive on your plan (§7.1). Seven distinct causes of empty results are catalogued in §7.8 — check that list before concluding "the tool is broken".
 
 That's the minimum useful loop. For the full feature map, keep reading — §8 collects the seven recipes that cover Peec's published primary use cases.
 
@@ -99,10 +99,10 @@ Run through this eight-item check before putting Peec figures in front of a huma
 4. **Dimensions and filters validated against the tool schema, not guessed.** `get_brand_report` valid dimensions: `prompt_id, model_id, model_channel_id, tag_id, topic_id, date, country_code, chat_id`. `brand_id` is filter-only, never a dimension. See §7.15 / §8.1.
 5. **Column names confirmed against the actual response payload.** Don't assume a column exists because a recipe says to sort on it. Default undimensioned `get_domain_report` returns `retrieved_percentage`, `retrieval_rate`, `citation_rate` — not `retrieval_count`. See §7.39 / §8.10.
 6. **Inactive engines flagged, not reported as zero visibility.** Check `list_models(is_active=true)` before claiming a brand is invisible on Perplexity/Claude/Gemini. See §7.1 / §7.8.
-7. **Empty results diagnosed against the six-cause list in §7.8** before concluding anything is broken. Soft-deleted brands, inactive engines, parametric answers, plan limits, filter-mismatch, and engine-returned empty-response bodies all look the same on the surface.
+7. **Empty results diagnosed against the seven-cause list in §7.8** before concluding anything is broken. Soft-deleted brands, inactive engines, parametric answers, plan limits, filter-mismatch, engine-returned empty-response bodies, and regulated-vertical content-policy refusals all look the same on the surface.
 8. **Unresolved `kw_…` IDs flagged as soft-deleted**, not as bugs. See §7.38.
 9. **Engine-returned empty-response chats flagged, not silently absorbed into non-mention aggregates.** Where the frequency is non-trivial, filter them out of visibility/SoV denominators or report them as a separate "engine no-answer" rate. See §7.8 cause 6 and §7.37 caveat.
-10. **Dimension labels confirmed present before reporting per-dimension breakdowns.** `get_brand_report` with `dimensions=[model_id]` can return the correct number of rows with `model_id: null` on every row (observed especially within the first 24h after a `create_prompt` / `update_prompt` wave, before the daily aggregation has caught up). Cross-reference row count against `list_models(is_active=true)` and verify label population before attributing metrics to engines. See §7.40.
+10. **Dimension labels confirmed present AND row count sanity-checked before reporting per-dimension breakdowns.** `get_brand_report` with a dimension set has two early-window failure modes: null-label rows (~24h post-write-wave, correct row count with `null` in the dimension column) and zero-rows entirely (~48h post-write-wave, observed on dimensioned queries combined with a `brand_id` filter). Cross-reference the row count against `list_models(is_active=true)` / `list_topics` / `list_tags`, verify the dimension column is populated, and if either check fails use the per-filter workaround (separate call per engine/topic/tag) or the tag-filter-without-dimension pattern (§7.40 workaround 5) before attributing metrics.
 11. **Fanout data scope confirmed per engine before drawing cross-engine conclusions.** `list_search_queries` returns zero rows for AI Overview (`google-0`), AI Mode (`google-1`), and Copilot (`microsoft-0`); ChatGPT (`openai-0`) and Grok (`xai-0`) are confirmed to return fanout. Other engines haven't been tested — verify empirically before relying on fanout for any engine not in that list. Don't report "what the AI searches for" as an engine-agnostic signal. See §7.41.
 
 If any item fails, stop and fix before reporting. Partial passes produce partial trust.
@@ -116,7 +116,7 @@ If any item fails, stop and fix before reporting. Partial passes produce partial
 - URL: `https://api.peec.ai/mcp`
 - Transport: Streamable HTTP
 - Auth: OAuth 2.0 (browser consent, token persists)
-- Scope: read + write (despite official docs claiming read-only — see §7.11)
+- Scope: read + write (12 write tools — see §7.11 for consent and verification patterns)
 
 **For per-client install instructions, follow Peec's official setup docs at [docs.peec.ai/mcp/introduction](https://docs.peec.ai/mcp/introduction).** Peec maintains the up-to-date list of supported clients and their step-by-step connection flows; this skill deliberately doesn't duplicate that content because it's environment-dependent and gets stale quickly.
 
@@ -380,6 +380,17 @@ High-mention-count brands may have near-zero domain-report presence if the AI en
 
 **Sources vs citations distinction** (from Peec's own docs): "sources" are every URL an AI model *accesses* while answering a prompt; "citations" are the subset of sources that the model *explicitly references* in the final response text. Peec's reports separate retrieval count from citation count for every domain/URL — don't conflate the two.
 
+**Empirical-sampling rule for per-engine characterisation.** Engine behaviour is distributional, not categorical. Any per-engine characterisation that lands in a deliverable (deck claim, recommendation, strategic finding) must be grounded in a sample of `get_chat` responses drawn from the project's actual data — not from general "ChatGPT is parametric" / "AI Overview retrieves" assumptions.
+
+Minimum sampling protocol:
+
+- **Sample size:** at least 8 chats per engine per characterisation claim.
+- **Topic diversity:** at least three distinct topics represented in the sample (avoid sampling eight chats from a single topic — engine behaviour varies by topic).
+- **Record per chat:** whether `sources: []` (parametric), `sources` populated (retrieval), or the response body reads as a content-policy refusal (see §7.8 cause 7).
+- **Report as a ratio, not a binary:** "4 of 8 sampled ChatGPT responses answered without fetching sources" is defensible; "ChatGPT is parametric" is not. If the sample is too small for a meaningful ratio, state the limitation in the deliverable rather than rounding up to a flat claim.
+
+This rule applies to every engine in Peec's catalogue, including ones this skill characterises elsewhere (e.g., "AI Overview retrieves selectively" needs the same grounding). Cross-reference in `peec-ai-tracking-strategy-builder` §14: engine-behaviour claims in Phase B decks require the sampling step and the observed ratio.
+
 ### 7.6 Observed chat counts exceed `prompts × active_models × days`
 
 Peec's `/understanding-chats` docs describe the cadence as "daily" and `/setting-up-your-prompts` adds that accepted prompts "start running immediately, joining the regular 24-hour cycle" — i.e. one run per prompt × model per day. In practice, observed chat counts for a project exceed `prompts × active_models × days` by a material factor.
@@ -392,11 +403,13 @@ Likely explanations — not conclusively verified:
 
 Practical guidance: don't reconstruct "how many chats are expected" from simple arithmetic — it won't match. Use `list_chats` directly to get the observed count.
 
+**Empirical anchor (TRIAL tier, April 2026).** A TRIAL-tier project with 70 prompts and 3 active engines produced **452 chats in its first 24-hour window** — 2.15× the simple prediction of 210 (70 × 3). Consistent with the model-channel multiplication hypothesis above. Use this as a rough expectation anchor when setting user expectations for day-1 chat volume on TRIAL-tier projects, but treat the multiplier as project-specific — it will vary with which engines are active (channel count differs per engine) and any acceptance back-fill in play.
+
 ### 7.7 `visibility_total` varies per dimension cell
 
 In a multi-dimension breakdown (e.g. model × topic), `visibility_total` differs per cell. Google AI Overview in particular only triggers for some queries, so its denominator is smaller than ChatGPT's in the same topic. If you compute share-of-voice by summing across cells, normalise carefully.
 
-### 7.8 Empty results have six possible causes
+### 7.8 Empty results have seven possible causes
 
 An empty `rows: []` response — or an apparent "brand not mentioned" chat —
 means one of:
@@ -406,8 +419,9 @@ means one of:
 4. **The date range is before the platform had data or in the future.** Report tools with a `start_date` that's far future or far past (e.g. `2030-01-01`, `2015-01-01`) return clean empty envelopes, not errors.
 5. **The filter targets a soft-deleted entity.** Soft-deleted brands, prompts, topics, and tags still exist in the system but are excluded from filter matches. `list_chats(brand_id=<deleted>)` returns empty — identical in shape to "no activity".
 6. **The engine itself returned an empty or placeholder response body** (e.g. `"No response."` as the entire chat body). The engine didn't fail to find your brand — it failed to answer. Detectable only by reading the chat payload via `get_chat`; aggregate fields treat it identically to "brand not mentioned". Distinguish from parametric-memory chats (engine answered, just didn't fetch sources) and from engine-wide outages (sister prompts from the same project/engine/day answered normally).
+7. **Regulated-vertical content-policy refusal.** Certain engines (most commonly `chatgpt-scraper`, but also occasionally Claude and Gemini) produce refusal responses for regulated-category prompts — cannabis, CBD, seed, nutra, gambling, pharma, regulated finance, weapons — where the engine's content policy blocks a substantive answer. The `get_chat` response looks populated (the message body has text) but reads as "I can't help with that" or similar. Aggregate-level, it looks like a chat that produced no brand mentions; qualitatively it's a structural absence, not an evidence-based one. Indicators: short message bodies, refusal-language patterns ("can't help", "not able to provide", "recommend consulting a professional"), absence of topical content. In regulated verticals, sample at least 8 chats per engine on regulated-category prompts to estimate the refusal rate before relying on that engine's data for strategic conclusions. Filter refusals out of visibility/SoV denominators — they're neither parametric nor retrieval, they're refusal, and they mean something different strategically (parametric = model knows your brand from training; refusal = model will never mention your brand regardless of what you do).
 
-Peec returns a clean empty array (or counts the chat as a non-mention) in all six cases — no error, no warning. Before reporting "no data", validate filter IDs by listing first (which excludes soft-deleted entities, so a missing ID in `list_*` is itself a signal), sanity-check the date range against the platform's real coverage window, and for low-visibility chats spot-check `get_chat` payloads for empty bodies.
+Peec returns a clean empty array (or counts the chat as a non-mention) in all seven cases — no error, no warning. Before reporting "no data", validate filter IDs by listing first (which excludes soft-deleted entities, so a missing ID in `list_*` is itself a signal), sanity-check the date range against the platform's real coverage window, and for low-visibility chats spot-check `get_chat` payloads for empty bodies and refusal patterns.
 
 ### 7.9 Auto-selected competitors on project creation are often wrong
 
@@ -421,13 +435,16 @@ In `get_domain_report`, the `classification` column can be `COMPETITOR` — but 
 
 **Multi-TLD brands and the `OWN` classification.** `classification=OWN` is driven by the `domains` array on the `is_own=true` brand row in `list_brands`, not by name matching or corporate-ownership inference. A brand with multiple TLDs (e.g. example.de, example.com, example.nl) will show `OWN` **only for the specific TLDs listed in that array** — all other TLDs of the same commercial entity fall back to `CORPORATE` (or whatever other classification applies). This is a project configuration completeness issue, not a classification bug. Agents auditing a domain report should check `list_brands(is_own=true).domains` first; if the array doesn't cover every TLD of the own brand, advise the user to update it via `update_brand` before drawing conclusions about "own vs. competitor" domain share.
 
-### 7.11 Official docs say the MCP is read-only. It is not.
+### 7.11 Write-operation consent, verification, and safe-experimentation patterns
 
-The docs state: *"All tools are read-only. The MCP server cannot modify your projects, prompts, or settings."* This is incorrect as of April 2026 — the server exposes 12 write/destructive tools (8 `create_*`/`update_*`, 4 `delete_*`). All are destructive or billable (creating prompts consumes plan credits). Agents should:
+The MCP server exposes **12 write/destructive tools** — 8 `create_*`/`update_*` and 4 `delete_*`. Every write tool is flagged `readOnlyHint: false` in the server's tool annotations, and every `delete_*` tool is flagged `destructiveHint: true`. Clients that honour MCP annotations (Claude, Cursor, and most others) prompt for confirmation before the call runs. Writes are consequential — some are destructive, at least one is billable (`create_prompt` consumes plan credits), and `update_brand` triggers background metric recalculation with a 409-class concurrent-edit window (see §7.19). Agents should therefore:
 
-- Confirm with the user before any mutation **unless the user has already granted explicit batch authorisation for the current plan**. If the user says *"go ahead and create these 20 prompts and then delete these 5 tags"* as a single instruction, treat that as one consent event — don't re-prompt on each individual call. If the plan changes mid-run (new entities, new destructive steps that weren't in the original batch), fall back to per-step confirmation. Rule of thumb: each batch's confirmation covers only the writes explicitly enumerated at batch approval time.
-- Prefer `list_*` for verification after a write (since writes return either `{id: "…"}` for creates or `{success: true}` for updates/deletes — never an echo).
-- For experimentation, create a dedicated test project in Peec so writes don't pollute production data.
+- **Confirm with the user before any mutation — but treat batch authorisation as one consent event.** If the user says *"go ahead and create these 20 prompts and then delete these 5 tags"* as a single instruction, don't re-prompt on each individual call. If the plan changes mid-run (new entities, new destructive steps that weren't in the original batch), fall back to per-step confirmation. Rule of thumb: each batch's confirmation covers only the writes explicitly enumerated at batch approval time.
+- **Prefer `list_*` for verification after a write.** Writes return either `{id: "…"}` for creates or `{success: true}` for updates/deletes — never an echo of the mutated record. Follow up with the matching `list_*` call if you need to confirm state, especially after bulk waves.
+- **Gate on credit balance before bulk `create_prompt`.** `create_prompt` is the only credit-consuming call. On TRIAL or small paid plans, check the remaining balance in the Peec UI before dispatching a wave of prompt creates — there's no `get_credit_balance` endpoint, and credit-exhaustion errors look like billing-shaped rejections rather than schema errors.
+- **For experimentation, create a dedicated test project in Peec** so writes don't pollute production data. Peec's soft-delete model means test clutter accumulates server-side even after "deletion" (§7.34) — isolating experimentation to a throwaway project keeps the production roster clean.
+
+**Historical note.** Earlier versions of this skill flagged Peec's docs as incorrectly describing the MCP as "read-only". Peec has since corrected their documentation to enumerate the full write surface. The skill content here has been retained because the consent-and-verification guidance is the useful part — the "docs are wrong" framing is no longer accurate.
 
 ### 7.12 `get_actions` MCP schema is empty — the tool is still callable, but reviewers will strip params
 
@@ -438,7 +455,7 @@ The docs state: *"All tools are read-only. The MCP server cannot modify your pro
 | Call | Status | Returns |
 |---|---|---|
 | `get_actions(scope=overview)` | ✓ works | Navigation metadata — counts and breakdowns by `url_classification` and `domain`, used to plan drill-down calls |
-| `get_actions(scope=owned)` | ✓ works | Own-domain URL actions (requires no extra params) |
+| `get_actions(scope=owned)` | ⚠︎ intermittent — has returned HTTP 422 at `POST .../get-action-owned` in otherwise-healthy sessions (April 2026) | Own-domain URL actions (no extra params required per schema) |
 | `get_actions(scope=editorial, url_classification=<value>)` | ✓ works | Third-party editorial pages at that URL classification |
 | `get_actions(scope=reference, domain=<value>)` | ✓ works | Reference-site (e.g. wikipedia.org) actions for that domain |
 | `get_actions(scope=ugc, domain=<value>)` | ✓ works | UGC-site (e.g. reddit.com, youtube.com) actions for that domain |
@@ -447,12 +464,14 @@ The two-step workflow is: call `scope=overview` first to see which slices have d
 
 **Known client-layer caveat.** The tool's declared JSON schema is still empty (`{properties: {}, type: "object"}`). Schema-strict MCP clients strip all parameters before sending, and the server then rejects with *"No matching discriminator: scope"*. If you see that error, you're on a client that's stripping params — switch clients or use the §8.8 workaround. Cowork and other pass-through clients send the params through and the call succeeds.
 
+**`scope=owned` 422 caveat (April 2026).** Confirmed intermittent on at least one production project: `scope=overview`, `scope=editorial`, `scope=reference`, and `scope=ugc` all returned 200 OK in the same session where `scope=owned` returned HTTP 422 at `POST .../get-action-owned`. The error surface (path exposed, no schema-mismatch details) points to a server-side issue on the owned endpoint, not client-side parameter stripping. If you hit it, the overview response already includes the OWNED opportunity score, relative-strength tier, and gap percentage per `url_classification` — that's usually enough for the strategic read without the drill-down text. For the full owned-URL gap list, fall back to §8.8's local approximation (filter `get_url_report` with the `gap` filter against the own brand's domains).
+
 **When to use §8.8 (approximate locally) instead:**
 - Running on a schema-strict client that strips params.
 - Want a single composite output without chaining 4–5 scoped calls.
-- Need the OWNED view on a project where `scope=owned` happens to be flaky (rare, but previously observed — spot-check first).
+- Need the OWNED view on a project where `scope=owned` is returning 422 — see caveat above.
 
-For most pass-through client sessions, prefer calling `get_actions` directly now. Report the empty schema to `support@peec.ai` so the `properties` field gets populated and schema-strict clients stop breaking.
+For most pass-through client sessions, prefer calling `get_actions` directly now. Report persistent `scope=owned` 422s and the empty tool schema to `support@peec.ai`.
 
 ### 7.13 `update_prompt` cannot change prompt text
 
@@ -560,15 +579,11 @@ Practical implications for agents:
 - If an MCP tool call returns an error whose text mentions rate limiting or exhaustion, treat it as a 429-class signal and back off ≥30 seconds before retrying. There's no header to read.
 - When building loops, prefer batching with explicit pauses over raw concurrency. A `for wave in waves: dispatch; sleep(2)` loop is safer than an unbounded `Promise.all`.
 
-### 7.25 Docs `/mcp/tools` page is incomplete
+### 7.25 Authoritative source of truth for the tool catalogue
 
-Peec's own documentation at `https://docs.peec.ai/mcp/tools` lists only 13 read tools. It omits:
+Peec's own documentation at `https://docs.peec.ai/mcp/tools` now enumerates all 27 tools — 15 read and 12 write (grouped under a single "write tools" heading that covers `create_*`, `update_*`, and `delete_*`). Earlier versions of this skill flagged that page as omitting `list_search_queries`, `list_shopping_queries`, and the entire write/destructive surface; those omissions have been corrected upstream as of April 2026.
 
-- `list_search_queries` and `list_shopping_queries` from the read surface.
-- The entire write surface (`create_*`, `update_*` — 8 tools).
-- The entire destructive surface (`delete_*` — 4 tools).
-
-When in doubt, the authoritative tool list is what the MCP server announces on connection (via tools/list), not the docs page. This skill documents the full 27-tool surface.
+In general, when the docs and the MCP disagree on surface or behaviour, **the authoritative source is what the MCP server announces on connection via `tools/list`** — not any prose description. Prose drifts; the tool catalogue is generated from the server's real schema. This skill documents per-tool behaviour (including the bits the docs still omit — empty-schema on `get_actions`, column asymmetries between reports, the `list_prompts.volume` type mismatch, etc.), not the tool list itself.
 
 ### 7.26 Empty collections are encoded inconsistently (`null` vs `[]`)
 
@@ -825,25 +840,55 @@ that window, dimensioned reports may return null labels. Keep a
 client-side timestamp of when the last write-wave completed and use
 that as the gate.
 
+**Two failure modes, not one.** There's actually a pair of related
+behaviours under this header — distinct enough to warrant different
+workarounds:
+
+- **Null-label rows** (observed in the first ~24h after a write wave):
+  the response contains the correct number of rows, but the dimension
+  label column is `null` on every row. Data is present; attribution
+  isn't.
+- **Zero-rows entirely** (observed around the 48h mark on at least one
+  production project, when combining `dimensions=[topic_id]` or
+  `dimensions=[model_id]` with a `brand_id` filter): `rowCount=0`. Data
+  genuinely unreported for that filter-plus-dimension combination.
+  Worse than null-label because the row count itself is wrong — no
+  "correct count, null labels" signal to catch it.
+
 **Workarounds, in order of cleanness:**
 1. **Wait out the processing window.** Re-run the dimensioned report
-   after the first full 24h processing cycle completes; labels
-   typically populate once the rollup catches up.
-2. **Cross-reference row count against `list_models(is_active=true)`.**
-   If the row count equals the active-engine count, you at least know
-   the dimension fired correctly; you just can't label rows by name.
-3. **Run separate filtered calls per `model_id`.** Call
-   `get_brand_report` once per engine with `filters=[{model_id: <id>}]`
-   — each call produces a single-row, self-labelling result.
+   after the first full 24–48h processing cycle completes; both failure
+   modes typically clear once the rollup catches up.
+2. **Cross-reference row count against `list_models(is_active=true)` or
+   `list_topics` / `list_tags`.** If the row count equals the expected
+   segment count and labels are null, you're in the null-label mode and
+   workaround 3 or 4 below will resolve it. If the row count is zero,
+   you're in the zero-rows mode and workaround 5 is the reliable path.
+3. **Run separate filtered calls per `model_id` (or per `topic_id` /
+   `tag_id`).** Call `get_brand_report` once per engine with
+   `filters=[{field: "model_id", operator: "in", values: [<id>]}]` — each
+   call produces a single-row, self-labelling result. Works in both
+   null-label and zero-rows modes.
 4. **Use `visibility_total` as a heuristic label.** Only reliable when
    engines have materially different chat counts (e.g. AI Overview
    typically has fewer chats than ChatGPT on the same project).
-   Unreliable when two engines have the same chat count.
+   Unreliable when two engines have the same chat count. Doesn't apply
+   to the zero-rows mode.
+5. **Tag-filter-without-dimension (zero-rows-mode workaround).** On
+   projects in the zero-rows window, dimensioned + `brand_id`-filtered
+   queries fail but **tag-filtered queries without a dimension** return
+   the full brand roster correctly. Use this pattern for branded-vs-
+   non-branded analysis: `get_brand_report(filters=[{tag_id: <non-branded>}])`
+   returns the full roster with visibility/SoV for the non-branded
+   subset of prompts, no dimension needed. Combine with workaround 3
+   (per-engine calls) for per-engine non-branded breakdowns.
 
-**Do not report per-engine breakdowns with null labels.** The data is
-there but unattributed; publishing an engine-level table with "Engine A,
-Engine B, Engine C" or with null in the engine column is a confident
-misreport. Pre-flight checklist item 10 enforces this.
+**Do not report per-engine breakdowns with null labels or zero rows.**
+Both are confident misreports in different shapes. Pre-flight checklist
+item 10 enforces this — but it's worth re-stating: if the dimension
+column is null on every row, or the rowCount is zero on a combination
+you expect to have data, switch to the per-filter workaround (step 3 or
+5) before putting numbers in front of a human.
 
 **Related observation, same report, different dimension:** treat every
 dimension with caution. Before attributing metrics to a dimension value,
