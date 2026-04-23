@@ -11,7 +11,7 @@ Released under [CC BY 4.0](./LICENSE). Reuse, adapt, redistribute — keep the a
 ## What this skill teaches the agent
 
 - **Data model clarity.** Brands, prompts, topics, and tags are orthogonal in Peec — no `brand_id` foreign key on prompts, no write path to "assign" prompts to brands. The skill makes this explicit so agents don't attempt impossible workflows.
-- **All 27 MCP tools** (15 read-only, 8 write, 4 destructive) with correct usage. The official docs describe the MCP as "read-only" — it isn't.
+- **All 27 MCP tools** (15 read-only, 8 write, 4 destructive) with correct usage.
 - **7 slash-command prompts** (`/peec_weekly_pulse` etc.) and when to use each.
 - **42 data-literacy gotchas.** Scales are mixed within a single row, `position` means rank-among-tracked-brands not overall, `list_models` returns 16 engines while the `model_id` filter enum lists 19, the sentiment formula isn't what the docs imply, `get_actions` is reliably callable from pass-through clients (schema-strict clients strip params — fallback recipe included), `retrieval_rate` and `citation_rate` can exceed 1.0, domain and URL reports return different types for the same-named columns, engine-returned empty response bodies silently inflate non-mention counts, `get_brand_report` dimension labels can return null within the first 24h after a prompt-write wave, `list_search_queries` (fanout) returns zero rows for AI Overview, AI Mode, and Copilot but is confirmed to return data for ChatGPT and Grok, `list_prompts.volume` returns string ordinals (not the 1–5 integers the schema claims), and more.
 - **Hidden features** — the `gap` filter on domain/URL reports, `mentioned_brand_count` filter, `regex` on `create_brand`, wave-based execution for bulk changes, scraped content via `get_url_content` (with the 5-day refresh cadence and dual classification fields documented).
@@ -66,7 +66,7 @@ Installing the skill doesn't connect your agent to Peec — you still need to ad
 
 ## Why this exists
 
-The Peec MCP server exposes a rich 27-tool surface, but the official documentation (a) describes it as read-only when it's not, (b) doesn't explain several critical data-interpretation subtleties that lead agents to produce confidently wrong analysis, and (c) doesn't cover all client apps. This skill fills those gaps.
+The Peec MCP server exposes a rich 27-tool surface, but the official documentation (a) doesn't explain several critical data-interpretation subtleties that lead agents to produce confidently wrong analysis, and (b) doesn't cover all client apps. This skill fills those gaps.
 
 The goal is that any agent — Claude, Cursor, Codex, n8n, whatever comes next — loads this skill and gets behaviour grounded in how Peec actually responds, not how the docs say it should.
 
