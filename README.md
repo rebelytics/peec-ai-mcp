@@ -19,7 +19,8 @@ Released under [CC BY 4.0](./LICENSE). Reuse, adapt, redistribute — keep the a
 
 | File | Purpose |
 |---|---|
-| [`SKILL.md`](./SKILL.md) | The skill itself. Load this into your MCP agent. |
+| [`SKILL.md`](./SKILL.md) | The core: data model, quick start, pre-flight checklist, setup, and a section map saying when to load each reference file. |
+| [`references/`](./references/) | The detailed surface, loaded on demand: tools & response format (§3–§5), power features (§6), the data-literacy gotcha catalogue (§7), and composite recipes (§8). Section numbering is global across the file set. |
 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) | How to propose changes. |
 | [`LICENSE`](./LICENSE) | CC BY 4.0. |
 
@@ -48,15 +49,15 @@ Claude Code will pick the skill up automatically from the project's skills direc
 
 ### Cursor / VS Code / Windsurf
 
-These clients don't have a unified skills model yet. For now, copy `SKILL.md` into your project and reference it explicitly in your AI context (e.g. via Cursor's `@Files` or VS Code's context pinning).
+These clients don't have a unified skills model yet. For now, copy the skill directory (`SKILL.md` plus `references/`) into your project and reference it explicitly in your AI context (e.g. via Cursor's `@Files` or VS Code's context pinning).
 
 ### OpenAI Codex
 
-Place `SKILL.md` under `~/.codex/skills/peec-ai-mcp/SKILL.md` if you're running a Codex version that supports skill files, or reference the content explicitly in your prompt preamble.
+Place the skill directory under `~/.codex/skills/peec-ai-mcp/` (keeping `SKILL.md` and `references/` together) if you're running a Codex version that supports skill files, or reference the content explicitly in your prompt preamble.
 
 ### n8n
 
-n8n doesn't have a skill concept. Include the relevant sections of `SKILL.md` in the system prompt of any workflow that calls Peec MCP — especially §7 (data-literacy gotchas).
+n8n doesn't have a skill concept. Include the relevant sections of the skill (especially `references/gotchas.md`, the §7 data-literacy catalogue) in the system prompt of any workflow that calls Peec MCP.
 
 ### Connecting the MCP server itself
 
