@@ -1,7 +1,7 @@
 ---
 name: peec-ai-mcp
 description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load when the user does Peec reporting, analysis, or multi-step work — visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups (brands, prompts, topics, tags), or Peec slash commands (`peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`). Also load for Peec data interpretation (sentiment, position, visibility, share of voice, retrieval vs citation, `get_actions` two-step workflow, `list_prompts.volume` ordinals, `get_url_content` 5-day refresh cadence) or when combining two or more Peec tools. Skip for trivial single-tool lookups like `list_projects`, `list_brands`, `list_topics` where Peec's own tool descriptions suffice. Teaches agents the real behaviour of the Peec MCP, including gotchas the official docs omit or get wrong.
-version: 1.4.3
+version: 1.5.0
 license: CC-BY-4.0
 origin: https://github.com/rebelytics/peec-ai-mcp
 maintainer: Eoghan Henn / rebelytics (eoghan@rebelytics.com)
@@ -13,7 +13,7 @@ Open-source guidance for AI agents working with the Peec AI MCP server. Agent-ag
 
 > Living document. If you discover behaviour that contradicts this file — or a new Peec feature that isn't covered — open an issue or PR at [github.com/rebelytics/peec-ai-mcp](https://github.com/rebelytics/peec-ai-mcp). See `CONTRIBUTING.md` for the workflow.
 >
-> Behaviour observations here are current as of April 2026. Peec iterates; things drift.
+> Behaviour observations here are current as of April 2026, with targeted re-verifications in June 2026 (fanout engine coverage, pagination caps, model catalogue). Peec iterates; things drift.
 
 ---
 
@@ -25,7 +25,7 @@ Server URL: `https://api.peec.ai/mcp`
 Transport: Streamable HTTP
 Auth: OAuth 2.0 (browser consent, token persists)
 
-The surface is **27 tools** (15 read-only, 8 write, 4 destructive), plus **7 slash-command "prompts"** that bundle pre-canned analyses. Peec's own `/mcp/tools` reference page now enumerates all 27 tools correctly (15 read + 12 write, where Peec groups `create_*`/`update_*`/`delete_*` under a single "write" heading); earlier versions of this skill flagged the docs as incomplete, but that's been corrected upstream as of April 2026. This skill's value is in the data-interpretation subtleties and behavioural gotchas §7 catalogues, not in filling a missing tool list. Write-operation consent and verification patterns live in §7.11.
+The surface is **27 tools** (15 read-only, 8 write, 4 destructive), plus **7 slash-command "prompts"** that bundle pre-canned analyses. (June 2026 drift note: the server has since started announcing a 16th read-only tool, `list_model_channels` — see §3 — bringing the live surface to 28; trust `tools/list` on connection over any count in prose.) Peec's own `/mcp/tools` reference page now enumerates all 27 tools correctly (15 read + 12 write, where Peec groups `create_*`/`update_*`/`delete_*` under a single "write" heading); earlier versions of this skill flagged the docs as incomplete, but that's been corrected upstream as of April 2026. This skill's value is in the data-interpretation subtleties and behavioural gotchas §7 catalogues, not in filling a missing tool list. Write-operation consent and verification patterns live in §7.11.
 
 ### Glossary of core terms
 
@@ -140,7 +140,8 @@ Before connecting, make sure the user has a Peec AI account (peec.ai) with at le
 | `list_topics` | Topics (folder-like groupings of prompts) |
 | `list_prompts` | Prompts, filterable by topic_id or tag_id |
 | `list_tags` | Cross-cutting labels applied to prompts |
-| `list_models` | AI engine catalog (see §7: `is_active` filter is critical) |
+| `list_models` | AI engine catalog (see §7: `is_active` filter is critical; deprecated as of June 2026 — prefer `list_model_channels`) |
+| `list_model_channels` | Per-channel engine catalogue (regional/setting variants behind each model) — added to the MCP surface mid-2026; the preferred channel-resolution tool (see §7.1 / §7.6) |
 | `list_chats` | Individual AI responses, filterable by brand/prompt/model |
 | `get_chat` | Full chat payload (messages, sources, products, brands_mentioned) |
 | `list_search_queries` | Sub-queries the AI engine fanned out to |
@@ -150,6 +151,8 @@ Before connecting, make sure the user has a Peec AI account (peec.ai) with at le
 | `get_url_report` | Source-URL retrieval + citation rates + page classification |
 | `get_url_content` | Scraped markdown of any indexed source URL |
 | `get_actions` | Opportunity-scored recommendations — two-step workflow (`scope=overview` then drill down). Callable from pass-through clients despite empty declared schema; see §6.4 / §7.12 |
+
+**June 2026 drift note on the counts.** The read-only table above now lists 16 tools: `list_model_channels` appeared on the MCP surface mid-2026, and `list_models`' own tool description now marks it "Deprecated — prefer list_model_channels". The "27 tools" / "15 read-only" framing used throughout this skill predates that addition. As always, the authoritative catalogue is what the server announces via `tools/list` on connection (§7.25) — re-verify counts there before quoting them.
 
 ### Write / mutate (8)
 
@@ -211,6 +214,7 @@ Every read tool returns columnar JSON:
 Helpers:
 - Row is an array of values in column order. Zip to get a dict.
 - `rowCount` is the page size, not the grand total. Use `total` when present.
+- **`totalCount` is now standard on `list_*` responses (June 2026).** Alongside `rowCount`, paginated `list_*` tools carry a `totalCount` field with the full row count for the query — the "optional, on some report tools" framing above predates this. This enables a cheap **`limit=1` totalCount probe**: call the tool with `limit=1` and read `totalCount` to size a dataset (e.g. learn a project has 2,000+ fanout rows) for the cost of a single row, before deciding on a pagination or overflow strategy (§7.18, §7.32).
 - **Write return shapes:**
   - `create_*` tools return `{id: "…"}` — the new entity's ID, nothing else.
   - `update_*` and `delete_*` tools return `{success: true}` — no echo of the updated record, no diff.
@@ -322,6 +326,50 @@ The dual classification matters: a page can be `EDITORIAL` at the domain level a
 - Re-running `get_url_content` more frequently than every 5 days returns the same payload — don't build re-fetch loops tighter than that.
 - A URL that returned `content: null` yesterday may return populated content today (first-encounter scrape can happen on any day); but once scraped, subsequent scrapes only happen on the 5-day cadence.
 
+**Failure mode C — content is silently incomplete.** `get_url_content`
+extracts page content via Mozilla Readability + Turndown GFM (per the
+tool's own documentation). Readability is designed to isolate the
+"main article" from surrounding chrome, which means it can — and
+empirically does — silently strip mid-page sections that follow
+promotional embeds, lazy-loaded blocks, or unusual HTML structures.
+The output looks complete (no error, no `content: null`), but content
+is missing. Observed in production: an editorial listicle page with
+multiple regional / category sections separated by promotional
+embeds; the cached markdown jumped from one section header to a
+later one, omitting the section in between — including its full
+brand list. A directly browser-verified view of the same URL showed
+the missing section in place. The cache and the brand-detection
+layer (`mentioned_brand_ids`) ran on the same truncated content, so
+both reported the contained brands as absent.
+
+**When this matters:** any time a downstream action depends on a
+specific brand, fact, or item being present in the cached content. In
+particular:
+
+- Editorial **gap analysis** ("brand X is absent from this URL across
+  N retrievals") — a `mentioned_brand_ids` set computed from
+  Readability-stripped content can show a brand absent that is in fact
+  prominently on the page.
+- Pitch-target verification — proposing outreach to an editor on the
+  basis that the brand is missing from their listicle, when the brand
+  is in the actual rendered listicle but in the section Readability
+  removed.
+- Content-recipe analysis — drawing conclusions about what's "on" a
+  page from an extraction that silently lost a section.
+
+**Rule:** for action-driving claims based on URL content (especially
+"brand X absent" gap claims that drive a stakeholder action item),
+treat `get_url_content` output as a starting point, not as ground
+truth. Browser-verify the URL in the rendered page before promoting
+the gap claim to a deck action item or a pitch target. The cost of
+one browser-verification call per candidate URL is dramatically lower
+than the cost of an embarrassing wrong-action-item that turns out to
+be based on a missing section.
+
+This applies upstream of the deck-ready phase — see
+peec-ai-tracking-strategy-builder §15.3 for the gate that codifies
+the verification step at deck level.
+
 ---
 
 ## 7. Data-literacy gotchas (READ THIS BEFORE REPORTING)
@@ -333,6 +381,8 @@ These are things the official documentation either omits or gets wrong. Ignoring
 The MCP's `model_id` filter/dimension enum on report tools lists 19 values as of April 2026 (adds `claude-haiku-4.5`, `claude-sonnet-4`, `grok-4`, `google-ai-mode-scraper`, `google-ai-overview-scraper`, `microsoft-copilot-scraper` on top of the legacy set). `list_models` returns 16 of these — the 3 omitted are engines that exist in the enum but aren't yet surfaced through the listing tool. Filter on `is_active: true` before building engine breakdowns. On lower-tier plans users select a subset of engines; the others return empty data. On a TRIAL-tier project, `is_active: true` typically holds for only 3 engines out of 16. Higher tiers unlock more. Empty results for an inactive model look identical to "no data exists" — there's no error.
 
 **Practical implication.** If you build a report from the `model_id` filter enum (19 values) instead of from `list_models` (16 values), three of those engines will return clean empty envelopes regardless of plan tier — treat them the same way you'd treat any other inactive engine: skip, don't report as "zero visibility". If the user asks about one of the three non-listed engines (`claude-sonnet-4`, `claude-haiku-4.5`, `grok-4` on most projects), tell them it's not available via the MCP's listing surface even though the enum accepts it.
+
+**June 2026 drift — the catalogue grew and `list_models` is now deprecated.** Re-verification against the live schemas in June 2026 found: the `model_id` enum has grown to **24 values** (adding, among others, `grok-4.3`, `qwen-3-6-plus`, `qwen-3-7-plus`, `amazon-rufus-scraper`, `deepseek-v4-pro`); `list_models` now returns **18 rows**, and its own tool description marks it **"Deprecated — prefer `list_model_channels`"** — a tool that has been added to the MCP surface (§3). The structural lessons above are unchanged (the filter enum is a superset of the listing tool's output; `is_active` gates real data), but the specific counts in this section are snapshots. **Re-verify any engine/channel count against the live tool schema before quoting it** — the catalogue is the fastest-drifting part of the surface, and Amazon Rufus / Qwen-class engines arriving mid-2026 shows new providers can appear without notice.
 
 ### 7.2 `*-scraper` models measure consumer behaviour; raw model IDs measure API responses
 
@@ -409,7 +459,7 @@ Peec's `/understanding-chats` docs describe the cadence as "daily" and `/setting
 
 Likely explanations — not conclusively verified:
 
-- **Model channels multiply the count.** Each model (e.g. `gpt-4o`) can have multiple channels (`openai-0`, `openai-1`, etc.) representing different regional/setting variants. `list_chats` filters by `model_id`, but each model may emit several chats per day from different channels. The full `model_channel_id` enum observed on report tools as of April 2026 is: `openai-0, openai-1, openai-2, perplexity-0, perplexity-1, google-0, google-1, google-2, google-3, anthropic-0, anthropic-1, deepseek-0, meta-0, xai-0, xai-1, microsoft-0` (16 channels across 8 providers).
+- **Model channels multiply the count.** Each model (e.g. `gpt-4o`) can have multiple channels (`openai-0`, `openai-1`, etc.) representing different regional/setting variants. `list_chats` filters by `model_id`, but each model may emit several chats per day from different channels. The full `model_channel_id` enum observed on report tools as of April 2026 is: `openai-0, openai-1, openai-2, perplexity-0, perplexity-1, google-0, google-1, google-2, google-3, anthropic-0, anthropic-1, deepseek-0, meta-0, xai-0, xai-1, microsoft-0` (16 channels across 8 providers). June 2026 re-check: the enum has since grown to **18 channels**, adding `qwen-0` and `amazon-0` (Amazon Rufus) — and the new `list_model_channels` tool (§3) is now the preferred way to resolve the live channel set rather than reading the enum.
 - **Back-fill on acceptance.** The "start running immediately" language suggests newly accepted prompts may be run multiple times shortly after acceptance to populate initial data.
 - **Error retries.** Failed prompt runs may re-run on the same day without being deduped in the chat count.
 
@@ -434,6 +484,8 @@ means one of:
 7. **Regulated-vertical content-policy refusal.** Certain engines (most commonly `chatgpt-scraper`, but also occasionally Claude and Gemini) produce refusal responses for regulated-category prompts — cannabis, CBD, seed, nutra, gambling, pharma, regulated finance, weapons — where the engine's content policy blocks a substantive answer. The `get_chat` response looks populated (the message body has text) but reads as "I can't help with that" or similar. Aggregate-level, it looks like a chat that produced no brand mentions; qualitatively it's a structural absence, not an evidence-based one. Indicators: short message bodies, refusal-language patterns ("can't help", "not able to provide", "recommend consulting a professional"), absence of topical content. In regulated verticals, sample at least 8 chats per engine on regulated-category prompts to estimate the refusal rate before relying on that engine's data for strategic conclusions. Filter refusals out of visibility/SoV denominators — they're neither parametric nor retrieval, they're refusal, and they mean something different strategically (parametric = model knows your brand from training; refusal = model will never mention your brand regardless of what you do).
 
 Peec returns a clean empty array (or counts the chat as a non-mention) in all seven cases — no error, no warning. Before reporting "no data", validate filter IDs by listing first (which excludes soft-deleted entities, so a missing ID in `list_*` is itself a signal), sanity-check the date range against the platform's real coverage window, and for low-visibility chats spot-check `get_chat` payloads for empty bodies and refusal patterns.
+
+**Trailing and interior data gaps are states, not events.** A related diagnosis that looks like cause 1 but isn't: a window of zero chats at the tail of a query range. When data ends before the query window does, probe `list_chats` `totalCount` for the trailing window — zero chats means the project stopped collecting (plan/trial state); non-zero chats with zero rows on another surface (e.g. fanout) means that surface lags, not the project (§7.41). And don't let "stopped collecting" harden into project lore: on one TRIAL-tier professional-services project, collection paused for five days and then resumed, leaving a clean interior gap in the time series. Re-probe in later sessions before describing a project as ended, and flag interior gaps explicitly in any time-series reporting — date-windowed rates computed across a gap will undercount for that period.
 
 ### 7.9 Auto-selected competitors on project creation are often wrong
 
@@ -556,6 +608,8 @@ Setting `topic_id: null` (not empty string, not omitted) removes the prompt's to
 
 `list_projects` and `list_models` have **no pagination parameters at all**. `list_projects` accepts only `include_inactive` (boolean); `list_models` accepts only `project_id`. These tools return the full set in a single call, so the truncation trap doesn't apply there — but if you're coding a generic paginator, special-case them.
 
+**Per-tool limit caps differ — June 2026 drift.** The "max 10000" above is no longer uniform: `list_search_queries` now hard-caps `limit` at **1000**, and its description explicitly says not to request 10000 but to paginate with `offset`. Other `list_*` tools retained the 10000 cap at last check. Treat every quantitative cap in this section as a snapshot with a verification date — **check the live tool schema before relying on any max value**, and expect per-tool divergence rather than a single global cap. The `limit=1` totalCount probe (§4) pairs well with this: size the dataset first, then pick a limit/offset plan that fits the tool's actual cap.
+
 **Two safe patterns for full-state reads on paginated tools:**
 
 1. **Explicit large limit** — `list_prompts(project_id, limit=10000)` for any inventory task. The server caps at 10000 but that's almost always enough for a single project.
@@ -563,7 +617,7 @@ Setting `topic_id: null` (not empty string, not omitted) removes the prompt's to
 
 Both work; prefer the explicit-limit form for single-call simplicity, and the paginated form when you want an audit trail that explicitly proves completeness.
 
-**Boundary behaviour:** `limit=0` returns a clean empty envelope rather than rejecting; `limit=1` works as expected; `limit=999999` is **silently capped** to the server's 10000 maximum without error. `limit=-1` and non-integer `limit` values are rejected client-side by the schema. The silent cap is the one to remember — an agent asking for "everything" by passing a huge number will silently get a truncated result, not an error.
+**Boundary behaviour:** `limit=0` returns a clean empty envelope rather than rejecting; `limit=1` works as expected; `limit=999999` is **silently capped** to the server's 10000 maximum without error. `limit=-1` and non-integer `limit` values are rejected client-side by the schema. The silent cap is the one to remember — an agent asking for "everything" by passing a huge number will silently get a truncated result, not an error. (On tools with a lower cap — e.g. `list_search_queries` at 1000 — over-limit values are rejected by the schema rather than silently capped; either way, don't assume one request returns everything.)
 
 ### 7.19 `update_brand` triggers background metric recalculation
 
@@ -597,9 +651,9 @@ If a Peec API field appears in a response but isn't documented in the current do
 Peec's HTTP API (separate from the MCP server, same platform) exposes functionality that is **not** callable via the MCP surface as of April 2026. Specifically:
 
 - **Prompt and topic suggestions** with accept/reject endpoints — Peec can suggest prompts or topics based on project context, but these live in the HTTP API, not the MCP.
-- **Model channel listing** (`list-model-channels`) — exposes finer detail about which models/channels a plan has access to.
+- **Model channel listing** (`list-model-channels`) — exposes finer detail about which models/channels a plan has access to. (June 2026: this one has since crossed over — it's now exposed via MCP as `list_model_channels`, and `list_models` is marked deprecated in its favour. See §3 / §7.1.)
 
-Why this matters for the agent: do **not** hallucinate MCP tools for these capabilities. If a user asks for "prompt suggestions", the MCP has no tool for that; either direct them to the Peec UI (where the feature lives) or, if they want programmatic access, to the HTTP API. The MCP surface of 27 tools is the authoritative set for MCP agents.
+Why this matters for the agent: do **not** hallucinate MCP tools for these capabilities. If a user asks for "prompt suggestions", the MCP has no tool for that; either direct them to the Peec UI (where the feature lives) or, if they want programmatic access, to the HTTP API. The MCP surface announced via `tools/list` is the authoritative set for MCP agents — and, as the `list_model_channels` crossover shows, HTTP-only features can migrate into it over time.
 
 ### 7.24 Rate limits: 200 requests/minute per project
 
@@ -623,7 +677,7 @@ Practical implications for agents:
 
 ### 7.25 Authoritative source of truth for the tool catalogue
 
-Peec's own documentation at `https://docs.peec.ai/mcp/tools` now enumerates all 27 tools — 15 read and 12 write (grouped under a single "write tools" heading that covers `create_*`, `update_*`, and `delete_*`). Earlier versions of this skill flagged that page as omitting `list_search_queries`, `list_shopping_queries`, and the entire write/destructive surface; those omissions have been corrected upstream as of April 2026.
+Peec's own documentation at `https://docs.peec.ai/mcp/tools` now enumerates all 27 tools — 15 read and 12 write (grouped under a single "write tools" heading that covers `create_*`, `update_*`, and `delete_*`). Earlier versions of this skill flagged that page as omitting `list_search_queries`, `list_shopping_queries`, and the entire write/destructive surface; those omissions have been corrected upstream as of April 2026. (And the catalogue keeps moving: June 2026 added `list_model_channels` — see §3.)
 
 In general, when the docs and the MCP disagree on surface or behaviour, **the authoritative source is what the MCP server announces on connection via `tools/list`** — not any prose description. Prose drifts; the tool catalogue is generated from the server's real schema. This skill documents per-tool behaviour (including the bits the docs still omit — empty-schema on `get_actions`, column asymmetries between reports, the `list_prompts.volume` type mismatch, etc.), not the tool list itself.
 
@@ -727,6 +781,7 @@ MCP tool results are subject to a token cap (empirically ~130K characters). When
 Observed triggers:
 - `get_domain_report(limit=10000, 12-month range)` — exceeded cap, saved to file.
 - `get_url_report(limit=1000, 12-month range)` — exceeded cap, saved to file.
+- `list_search_queries(limit=1000)` on a fanout-heavy project (~210K chars per page) — exceeded cap, saved to file.
 
 Implications for an agent:
 1. **Large responses will not arrive in-band.** If your agent parses the first tool result as columnar JSON unconditionally, a file-pointer envelope will look like a parse failure.
@@ -739,6 +794,13 @@ Implications for an agent:
 - **Recognise the file-pointer envelope shape.** If the tool result isn't columnar JSON, check for a file path in the response before treating it as an error or as "no data".
 
 This is MCP runtime behaviour, not Peec-server behaviour. It applies to any tool whose response is large enough to exceed the cap.
+
+**Processing the overflow file.** When the payload does land in a file, the file itself becomes the dataset — but how you can process it depends on where it landed:
+
+- **Check reachability before planning the analysis.** In split host/sandbox environments (e.g. Cowork, where shell commands run in an isolated sandbox while file tools operate on the host), the overflow file is typically saved under the **host's** temp directory — a path the sandboxed shell cannot reach. `bash`/`jq`/`python` pipelines against it will fail with "no such file", while host-side file tools (Read, Grep, or their equivalents) can access it fine. Verify which execution surface can reach the saved path *before* designing the processing strategy.
+- **The saved JSON is a single line** — line-oriented tooling (line counts, Grep's count mode, Read with line offsets) is useless against it directly. The workable primitive is **match-only grep** (`-o`) with offset/head-limit probing: a pattern match with `offset=N` that returns `k < head_limit` lines means exactly `N + k` total matches. This gives exact counts and targeted extraction at trivial context cost — e.g. probing with `offset=300` and getting 23 lines back proves exactly 323 matches, without ever loading the payload.
+- **Two-stage grep converts the file into a line-based derivative.** A full-row `-o` grep over the single-line JSON whose match output itself exceeds the output cap gets persisted as a *new* tool-results file — and that second-stage file is **line-based** (one match per line). All line-oriented tooling works on it: Read pages through it with offset/limit, count mode counts correctly, and further `-o` extractions (e.g. pulling the leading `pr_…` prompt IDs off each row) are cheap. The pattern: (1) full-row `-o` grep on the single-line overflow JSON → persisted line-based match file; (2) run cheap count/extract passes against that file instead of the original. In production this turned a ~420K-char two-page fanout payload into a 300-odd-row match file that could be term-split and ID-extracted without re-reading the originals.
+- **Deliberate overflow is a legitimate strategy.** When you only need pattern counts or examples from a large dataset, intentionally triggering the overflow (e.g. `list_search_queries(limit=1000)`) and grepping the saved file is far cheaper than paging hundreds of KB of rows through the conversation context. Size the dataset first with the `limit=1` totalCount probe (§4), then decide: in-band paging for small sets, overflow-and-grep for large ones.
 
 ### 7.33 Parameter-fuzz error-layer catalogue — know which layer rejected your call
 
@@ -1005,6 +1067,23 @@ project-tune-up session, and treat any positive result as a bonus
 capability to integrate into §8.3. The authoritative check is always
 a live per-engine call, not a memory of the last table state.
 
+**June 2026 re-verification.** Per the cadence note above: on a
+production project with ChatGPT, AI Overview, and Copilot active,
+100% of ~2,000 fanout rows over a six-week window carried
+`chatgpt-scraper` / `openai-0`; AI Overview and Copilot contributed
+zero. The table above still holds.
+
+**End-of-data vs ingestion-lag check.** When fanout data ends before
+the query window does, don't assume fanout-specific lag — probe
+`list_chats` `totalCount` for the trailing window. Zero chats means
+the project stopped collecting (plan/trial state); non-zero chats
+with zero fanout rows means a fanout-specific ingestion lag. And
+treat "stopped collecting" as a state, not a terminal event: a
+TRIAL-tier project observed with a trailing zero-chat window resumed
+collection five days later, leaving a clean interior gap (see §7.8).
+Re-probe on later sessions before reporting a project as ended, and
+flag interior gaps in any time-series built on fanout or chat data.
+
 ### 7.42 `list_prompts.volume` is a string ordinal, not an integer; `volume_status` is not exposed
 
 `list_prompts` returns a `volume` column per prompt as of April 2026 — the
@@ -1047,6 +1126,8 @@ The recipes below collectively cover Peec's six published primary use cases (per
 **Start here for the most common request type.** When a user says "give me a visibility report", "full report", "monthly report", or anything comparable, reach for the composite meta-recipe in **§8.0** first — it sequences the atomic recipes below into the three common depth tiers (quick / standard / deep).
 
 **Composite recipes** answer recurring multi-step questions that the atomics only partially cover: **§8.8** is a local fallback for `get_actions` when the native tool is unavailable (e.g. schema-strict client strips params — see §7.12); **§8.9** is the full competitive gap analysis flow (strategic view, not just a URL list); **§8.10** is a source-authority audit (who's citing whom, and at what rate); **§8.11** is the safe test-entity lifecycle pattern for agent-driven experimentation.
+
+**Reporting convention — split prompt-level stats branded vs non-branded by default.** Before reporting any prompt-level proportion (visibility, mention rate, fanout coverage, "N of M prompts show X"), check `list_tags` for a branded/non-branded taxonomy on the project. If the tags exist, report the split unprompted — don't wait to be asked. A blended aggregate hides the number stakeholders actually want: e.g. "89% of prompts show third-party directory mentions in fanout" can decompose into ~91% on non-branded prompts but only ~60% on branded ones — materially different stories, and the non-branded (discovery) rate is usually the one that matters strategically. Reserve the blended figure for projects whose tag taxonomy doesn't support the split, and say so when you do.
 
 ### 8.0 "Give me a full visibility report" (meta-recipe)
 
