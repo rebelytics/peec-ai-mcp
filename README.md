@@ -4,10 +4,6 @@ A companion skill for the [Peec AI MCP server](https://docs.peec.ai/mcp/introduc
 
 Released under [CC BY 4.0](./LICENSE). Reuse, adapt, redistribute — keep the attribution.
 
-> **Status:** v1.5.0 — minor release. June 2026 re-verification of the fastest-drifting parts of the surface: `list_model_channels` has arrived on the MCP and `list_models` is marked deprecated in its favour (§3, §7.1, §7.6, §7.23, §7.25); the `model_id` enum has grown to 24 values and the channel enum to 18; `list_*` responses now carry `totalCount`, enabling a cheap `limit=1` sizing probe (§4); `list_search_queries` caps `limit` at 1000 and rejects over-limit values rather than silently capping (§7.18). New guidance on `get_url_content` silently dropping mid-page sections (Readability extraction) and why gap claims need browser verification (§6.4); on reading trailing and interior data gaps as states rather than events (§7.8, §7.41); on processing overflow files when a result exceeds the MCP token cap (§7.32); and a reporting convention to split prompt-level stats branded vs non-branded by default (§8). PRs welcome.
->
-> **Previous: v1.4.3 — patch release.** Light confidentiality pass on two incidental third-party mentions. §7.15 no longer names specific competing AI-visibility tools when explaining that `create_prompt` has no `language` field; the comparative point (other platforms expose separate language/locale fields, Peec doesn't) is preserved with neutral framing. §11's Source Authority Audit recipe drops a named crawler from the TECHNICAL-classification aside in favour of "Screaming Frog, Sitebulb, or equivalent crawlers". No behaviour or tool-surface changes — phrasing hygiene only. PRs welcome.
->
 > **Value scales with task complexity.** This is a comprehensive reference (~16k words / ~26k tokens when loaded) designed to replace trial-and-error on multi-step Peec work — full visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups. For trivial single-tool lookups like `list_projects` or `list_brands`, Peec's own tool descriptions are usually enough; the frontmatter deliberately avoids triggering on those. The payoff lands on tasks where data-interpretation gotchas (sentiment scale, position semantics, retrieval-vs-citation, `get_actions` two-step workflow, `list_prompts.volume` type coercion, `get_url_content` refresh cadence) or schema asymmetries (§7.39, §7.31) would otherwise produce confidently wrong output. Internal A/B testing across complexity tiers (simple lookups → deep multi-step audits) showed skill-assisted runs on the complex tier produced materially more correct output at a modest token cost, while the simple tier saw effectively no benefit — which is why the description is scoped to analysis and multi-step work, not every Peec mention.
 
 ## What this skill teaches the agent
@@ -56,7 +52,7 @@ These clients don't have a unified skills model yet. For now, copy `SKILL.md` in
 
 ### OpenAI Codex
 
-Place `SKILL.md` under `~/.codex/skills/peec-ai-mcp/SKILL.md` if you're running a Codex version that supports skill files (December 2025+), or reference the content explicitly in your prompt preamble.
+Place `SKILL.md` under `~/.codex/skills/peec-ai-mcp/SKILL.md` if you're running a Codex version that supports skill files, or reference the content explicitly in your prompt preamble.
 
 ### n8n
 

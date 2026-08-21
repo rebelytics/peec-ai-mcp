@@ -13,7 +13,7 @@ Open-source guidance for AI agents working with the Peec AI MCP server. Agent-ag
 
 > Living document. If you discover behaviour that contradicts this file — or a new Peec feature that isn't covered — open an issue or PR at [github.com/rebelytics/peec-ai-mcp](https://github.com/rebelytics/peec-ai-mcp). See `CONTRIBUTING.md` for the workflow.
 >
-> Behaviour observations here are current as of April 2026, with targeted re-verifications in June 2026 (fanout engine coverage, pagination caps, model catalogue). Peec iterates; things drift.
+> Behaviour observations here were verified against the live server, with the fastest-drifting areas (fanout engine coverage, pagination caps, model catalogue) re-verified since. Peec iterates; things drift.
 
 ---
 
@@ -25,7 +25,7 @@ Server URL: `https://api.peec.ai/mcp`
 Transport: Streamable HTTP
 Auth: OAuth 2.0 (browser consent, token persists)
 
-The surface is **27 tools** (15 read-only, 8 write, 4 destructive), plus **7 slash-command "prompts"** that bundle pre-canned analyses. (June 2026 drift note: the server has since started announcing a 16th read-only tool, `list_model_channels` — see §3 — bringing the live surface to 28; trust `tools/list` on connection over any count in prose.) Peec's own `/mcp/tools` reference page now enumerates all 27 tools correctly (15 read + 12 write, where Peec groups `create_*`/`update_*`/`delete_*` under a single "write" heading); earlier versions of this skill flagged the docs as incomplete, but that's been corrected upstream as of April 2026. This skill's value is in the data-interpretation subtleties and behavioural gotchas §7 catalogues, not in filling a missing tool list. Write-operation consent and verification patterns live in §7.11.
+The surface is **27 tools** (15 read-only, 8 write, 4 destructive), plus **7 slash-command "prompts"** that bundle pre-canned analyses. (Drift note: the server has since started announcing a 16th read-only tool, `list_model_channels` — see §3 — bringing the live surface to 28; trust `tools/list` on connection over any count in prose.) Peec's own `/mcp/tools` reference page now enumerates all 27 tools correctly (15 read + 12 write, where Peec groups `create_*`/`update_*`/`delete_*` under a single "write" heading); earlier versions of this skill flagged the docs as incomplete, but that's since been corrected upstream. This skill's value is in the data-interpretation subtleties and behavioural gotchas §7 catalogues, not in filling a missing tool list. Write-operation consent and verification patterns live in §7.11.
 
 ### Glossary of core terms
 
@@ -140,8 +140,8 @@ Before connecting, make sure the user has a Peec AI account (peec.ai) with at le
 | `list_topics` | Topics (folder-like groupings of prompts) |
 | `list_prompts` | Prompts, filterable by topic_id or tag_id |
 | `list_tags` | Cross-cutting labels applied to prompts |
-| `list_models` | AI engine catalog (see §7: `is_active` filter is critical; deprecated as of June 2026 — prefer `list_model_channels`) |
-| `list_model_channels` | Per-channel engine catalogue (regional/setting variants behind each model) — added to the MCP surface mid-2026; the preferred channel-resolution tool (see §7.1 / §7.6) |
+| `list_models` | AI engine catalog (see §7: `is_active` filter is critical; now deprecated — prefer `list_model_channels`) |
+| `list_model_channels` | Per-channel engine catalogue (regional/setting variants behind each model) — a later addition to the MCP surface; the preferred channel-resolution tool (see §7.1 / §7.6) |
 | `list_chats` | Individual AI responses, filterable by brand/prompt/model |
 | `get_chat` | Full chat payload (messages, sources, products, brands_mentioned) |
 | `list_search_queries` | Sub-queries the AI engine fanned out to |
@@ -152,7 +152,7 @@ Before connecting, make sure the user has a Peec AI account (peec.ai) with at le
 | `get_url_content` | Scraped markdown of any indexed source URL |
 | `get_actions` | Opportunity-scored recommendations — two-step workflow (`scope=overview` then drill down). Callable from pass-through clients despite empty declared schema; see §6.4 / §7.12 |
 
-**June 2026 drift note on the counts.** The read-only table above now lists 16 tools: `list_model_channels` appeared on the MCP surface mid-2026, and `list_models`' own tool description now marks it "Deprecated — prefer list_model_channels". The "27 tools" / "15 read-only" framing used throughout this skill predates that addition. As always, the authoritative catalogue is what the server announces via `tools/list` on connection (§7.25) — re-verify counts there before quoting them.
+**Drift note on the counts.** The read-only table above now lists 16 tools: `list_model_channels` appeared on the MCP surface after this skill's initial tool census, and `list_models`' own tool description now marks it "Deprecated — prefer list_model_channels". The "27 tools" / "15 read-only" framing used throughout this skill predates that addition. As always, the authoritative catalogue is what the server announces via `tools/list` on connection (§7.25) — re-verify counts there before quoting them.
 
 ### Write / mutate (8)
 
@@ -167,7 +167,7 @@ Before connecting, make sure the user has a Peec AI account (peec.ai) with at le
 | `create_tag` | Add a tag with one of 22 colours (see below) |
 | `update_tag` | Rename or recolour a tag |
 
-**Tag colour enum (22 values):** `gray`, `red`, `orange`, `yellow`, `lime`, `green`, `cyan`, `blue`, `purple`, `fuchsia`, `pink`, `emerald`, `amber`, `violet`, `indigo`, `teal`, `sky`, `rose`, `slate`, `zinc`, `neutral`, `stone`. The tool's JSON schema is the authoritative source if Peec adds colours later; this list matches the schema as of April 2026.
+**Tag colour enum (22 values):** `gray`, `red`, `orange`, `yellow`, `lime`, `green`, `cyan`, `blue`, `purple`, `fuchsia`, `pink`, `emerald`, `amber`, `violet`, `indigo`, `teal`, `sky`, `rose`, `slate`, `zinc`, `neutral`, `stone`. The tool's JSON schema is the authoritative source if Peec adds colours later; this list matches the schema at last verification.
 
 ### Destructive (4)
 
@@ -214,7 +214,7 @@ Every read tool returns columnar JSON:
 Helpers:
 - Row is an array of values in column order. Zip to get a dict.
 - `rowCount` is the page size, not the grand total. Use `total` when present.
-- **`totalCount` is now standard on `list_*` responses (June 2026).** Alongside `rowCount`, paginated `list_*` tools carry a `totalCount` field with the full row count for the query — the "optional, on some report tools" framing above predates this. This enables a cheap **`limit=1` totalCount probe**: call the tool with `limit=1` and read `totalCount` to size a dataset (e.g. learn a project has 2,000+ fanout rows) for the cost of a single row, before deciding on a pagination or overflow strategy (§7.18, §7.32).
+- **`totalCount` is now standard on `list_*` responses.** Alongside `rowCount`, paginated `list_*` tools carry a `totalCount` field with the full row count for the query — the "optional, on some report tools" framing above predates this. This enables a cheap **`limit=1` totalCount probe**: call the tool with `limit=1` and read `totalCount` to size a dataset (e.g. learn a project has 2,000+ fanout rows) for the cost of a single row, before deciding on a pagination or overflow strategy (§7.18, §7.32).
 - **Write return shapes:**
   - `create_*` tools return `{id: "…"}` — the new entity's ID, nothing else.
   - `update_*` and `delete_*` tools return `{success: true}` — no echo of the updated record, no diff.
@@ -283,7 +283,7 @@ Always call with `scope=overview` first — it returns *navigation metadata*, no
 - `scope=reference` + `domain` (e.g. "wikipedia.org")
 - `scope=ugc` + `domain` (e.g. "reddit.com", "youtube.com")
 
-As of April 2026 this workflow is reliably callable from Cowork and other pass-through MCP clients despite the tool's declared JSON schema still being empty. Schema-strict clients strip the `scope` parameter before sending — on those, the server rejects with *"No matching discriminator: scope"*. See §7.12 for the full behavioural matrix and when to fall back to the local approximation recipe in §8.8.
+This workflow is reliably callable from Cowork and other pass-through MCP clients despite the tool's declared JSON schema still being empty. Schema-strict clients strip the `scope` parameter before sending — on those, the server rejects with *"No matching discriminator: scope"*. See §7.12 for the full behavioural matrix and when to fall back to the local approximation recipe in §8.8.
 
 ### 6.5 Wave-based execution for bulk config changes
 
@@ -312,7 +312,7 @@ After `get_url_report`, feed interesting URLs into `get_url_content` to pull the
 
 An agent looping over `get_url_report` → `get_url_content` must branch on these two cases, not conflate them. The error-vs-null distinction is the reliable signal.
 
-**Response payload fields (April 2026).** A successful `get_url_content` response carries, in addition to the markdown body:
+**Response payload fields.** A successful `get_url_content` response carries, in addition to the markdown body:
 
 - `content_updated_at` — ISO timestamp of the last scrape for this URL. Use this, not "now", as the as-of date when quoting the page back to a user.
 - `classification` — **domain-level** classification of the source (same enum as §7.30: `CORPORATE`, `EDITORIAL`, `INSTITUTIONAL`, `UGC`, `REFERENCE`, `COMPETITOR`, `OWN`, `OTHER`).
@@ -320,7 +320,7 @@ An agent looping over `get_url_report` → `get_url_content` must branch on thes
 
 The dual classification matters: a page can be `EDITORIAL` at the domain level and `COMPARISON` at the page level, and the two enums never overlap. Don't conflate them; they answer different questions (who publishes this vs. what kind of page is it).
 
-**5-day refresh cadence.** Source-URL page content is re-scraped every ~5 days, **not daily** (confirmed by Peec staff in the MCP challenge Slack channel and verified empirically across 8 URL samples in April 2026 — `content_updated_at` values cluster into 5-day buckets). Implications:
+**5-day refresh cadence.** Source-URL page content is re-scraped every ~5 days, **not daily** (confirmed by Peec staff in the MCP challenge Slack channel and verified empirically across 8 URL samples — `content_updated_at` values cluster into 5-day buckets). Implications:
 
 - For time-sensitive analysis (e.g. "what is this page saying right now?"), the content may be up to 5 days stale. Surface `content_updated_at` alongside any quoted content so the user knows the as-of date.
 - Re-running `get_url_content` more frequently than every 5 days returns the same payload — don't build re-fetch loops tighter than that.
@@ -378,11 +378,11 @@ These are things the official documentation either omits or gets wrong. Ignoring
 
 ### 7.1 `list_models` returns 16 engines (schema `model_id` enum is 19); only `is_active: true` are tracked
 
-The MCP's `model_id` filter/dimension enum on report tools lists 19 values as of April 2026 (adds `claude-haiku-4.5`, `claude-sonnet-4`, `grok-4`, `google-ai-mode-scraper`, `google-ai-overview-scraper`, `microsoft-copilot-scraper` on top of the legacy set). `list_models` returns 16 of these — the 3 omitted are engines that exist in the enum but aren't yet surfaced through the listing tool. Filter on `is_active: true` before building engine breakdowns. On lower-tier plans users select a subset of engines; the others return empty data. On a TRIAL-tier project, `is_active: true` typically holds for only 3 engines out of 16. Higher tiers unlock more. Empty results for an inactive model look identical to "no data exists" — there's no error.
+The MCP's `model_id` filter/dimension enum on report tools listed 19 values at initial verification (adds `claude-haiku-4.5`, `claude-sonnet-4`, `grok-4`, `google-ai-mode-scraper`, `google-ai-overview-scraper`, `microsoft-copilot-scraper` on top of the legacy set). `list_models` returns 16 of these — the 3 omitted are engines that exist in the enum but aren't yet surfaced through the listing tool. Filter on `is_active: true` before building engine breakdowns. On lower-tier plans users select a subset of engines; the others return empty data. On a TRIAL-tier project, `is_active: true` typically holds for only 3 engines out of 16. Higher tiers unlock more. Empty results for an inactive model look identical to "no data exists" — there's no error.
 
 **Practical implication.** If you build a report from the `model_id` filter enum (19 values) instead of from `list_models` (16 values), three of those engines will return clean empty envelopes regardless of plan tier — treat them the same way you'd treat any other inactive engine: skip, don't report as "zero visibility". If the user asks about one of the three non-listed engines (`claude-sonnet-4`, `claude-haiku-4.5`, `grok-4` on most projects), tell them it's not available via the MCP's listing surface even though the enum accepts it.
 
-**June 2026 drift — the catalogue grew and `list_models` is now deprecated.** Re-verification against the live schemas in June 2026 found: the `model_id` enum has grown to **24 values** (adding, among others, `grok-4.3`, `qwen-3-6-plus`, `qwen-3-7-plus`, `amazon-rufus-scraper`, `deepseek-v4-pro`); `list_models` now returns **18 rows**, and its own tool description marks it **"Deprecated — prefer `list_model_channels`"** — a tool that has been added to the MCP surface (§3). The structural lessons above are unchanged (the filter enum is a superset of the listing tool's output; `is_active` gates real data), but the specific counts in this section are snapshots. **Re-verify any engine/channel count against the live tool schema before quoting it** — the catalogue is the fastest-drifting part of the surface, and Amazon Rufus / Qwen-class engines arriving mid-2026 shows new providers can appear without notice.
+**Drift — the catalogue grew and `list_models` is now deprecated.** A later re-verification against the live schemas found: the `model_id` enum has grown to **24 values** (adding, among others, `grok-4.3`, `qwen-3-6-plus`, `qwen-3-7-plus`, `amazon-rufus-scraper`, `deepseek-v4-pro`); `list_models` now returns **18 rows**, and its own tool description marks it **"Deprecated — prefer `list_model_channels`"** — a tool that has been added to the MCP surface (§3). The structural lessons above are unchanged (the filter enum is a superset of the listing tool's output; `is_active` gates real data), but the specific counts in this section are snapshots. **Re-verify any engine/channel count against the live tool schema before quoting it** — the catalogue is the fastest-drifting part of the surface, and Amazon Rufus / Qwen-class engines arriving unannounced shows new providers can appear without notice.
 
 ### 7.2 `*-scraper` models measure consumer behaviour; raw model IDs measure API responses
 
@@ -459,13 +459,13 @@ Peec's `/understanding-chats` docs describe the cadence as "daily" and `/setting
 
 Likely explanations — not conclusively verified:
 
-- **Model channels multiply the count.** Each model (e.g. `gpt-4o`) can have multiple channels (`openai-0`, `openai-1`, etc.) representing different regional/setting variants. `list_chats` filters by `model_id`, but each model may emit several chats per day from different channels. The full `model_channel_id` enum observed on report tools as of April 2026 is: `openai-0, openai-1, openai-2, perplexity-0, perplexity-1, google-0, google-1, google-2, google-3, anthropic-0, anthropic-1, deepseek-0, meta-0, xai-0, xai-1, microsoft-0` (16 channels across 8 providers). June 2026 re-check: the enum has since grown to **18 channels**, adding `qwen-0` and `amazon-0` (Amazon Rufus) — and the new `list_model_channels` tool (§3) is now the preferred way to resolve the live channel set rather than reading the enum.
+- **Model channels multiply the count.** Each model (e.g. `gpt-4o`) can have multiple channels (`openai-0`, `openai-1`, etc.) representing different regional/setting variants. `list_chats` filters by `model_id`, but each model may emit several chats per day from different channels. The full `model_channel_id` enum observed on report tools at initial verification is: `openai-0, openai-1, openai-2, perplexity-0, perplexity-1, google-0, google-1, google-2, google-3, anthropic-0, anthropic-1, deepseek-0, meta-0, xai-0, xai-1, microsoft-0` (16 channels across 8 providers). Later re-check: the enum has since grown to **18 channels**, adding `qwen-0` and `amazon-0` (Amazon Rufus) — and the new `list_model_channels` tool (§3) is now the preferred way to resolve the live channel set rather than reading the enum.
 - **Back-fill on acceptance.** The "start running immediately" language suggests newly accepted prompts may be run multiple times shortly after acceptance to populate initial data.
 - **Error retries.** Failed prompt runs may re-run on the same day without being deduped in the chat count.
 
 Practical guidance: don't reconstruct "how many chats are expected" from simple arithmetic — it won't match. Use `list_chats` directly to get the observed count.
 
-**Empirical anchor (TRIAL tier, April 2026).** A TRIAL-tier project with 70 prompts and 3 active engines produced **452 chats in its first 24-hour window** — 2.15× the simple prediction of 210 (70 × 3). Consistent with the model-channel multiplication hypothesis above. Use this as a rough expectation anchor when setting user expectations for day-1 chat volume on TRIAL-tier projects, but treat the multiplier as project-specific — it will vary with which engines are active (channel count differs per engine) and any acceptance back-fill in play.
+**Empirical anchor (TRIAL tier).** A TRIAL-tier project with 70 prompts and 3 active engines produced **452 chats in its first 24-hour window** — 2.15× the simple prediction of 210 (70 × 3). Consistent with the model-channel multiplication hypothesis above. Use this as a rough expectation anchor when setting user expectations for day-1 chat volume on TRIAL-tier projects, but treat the multiplier as project-specific — it will vary with which engines are active (channel count differs per engine) and any acceptance back-fill in play.
 
 ### 7.7 `visibility_total` varies per dimension cell
 
@@ -512,14 +512,14 @@ The MCP server exposes **12 write/destructive tools** — 8 `create_*`/`update_*
 
 ### 7.12 `get_actions` MCP schema is empty — the tool is still callable, but reviewers will strip params
 
-**Status update (April 2026, re-verified):** `get_actions` is reliably callable from Cowork and other pass-through clients. Earlier versions of this skill described the tool as "broken" — that was a client-behaviour issue, not a server-side outage. The server-side two-step workflow works; the agent just has to be aware that the MCP tool's JSON schema is empty and some clients will strip parameters before sending.
+**Status update (re-verified):** `get_actions` is reliably callable from Cowork and other pass-through clients. Earlier versions of this skill described the tool as "broken" — that was a client-behaviour issue, not a server-side outage. The server-side two-step workflow works; the agent just has to be aware that the MCP tool's JSON schema is empty and some clients will strip parameters before sending.
 
-**Behaviour by scope, re-confirmed April 2026:**
+**Behaviour by scope, re-confirmed:**
 
 | Call | Status | Returns |
 |---|---|---|
 | `get_actions(scope=overview)` | ✓ works | Navigation metadata — counts and breakdowns by `url_classification` and `domain`, used to plan drill-down calls |
-| `get_actions(scope=owned)` | ⚠︎ intermittent — has returned HTTP 422 at `POST .../get-action-owned` in otherwise-healthy sessions (April 2026) | Own-domain URL actions (no extra params required per schema) |
+| `get_actions(scope=owned)` | ⚠︎ intermittent — has returned HTTP 422 at `POST .../get-action-owned` in otherwise-healthy sessions | Own-domain URL actions (no extra params required per schema) |
 | `get_actions(scope=editorial, url_classification=<value>)` | ✓ works | Third-party editorial pages at that URL classification |
 | `get_actions(scope=reference, domain=<value>)` | ✓ works | Reference-site (e.g. wikipedia.org) actions for that domain |
 | `get_actions(scope=ugc, domain=<value>)` | ✓ works | UGC-site (e.g. reddit.com, youtube.com) actions for that domain |
@@ -528,7 +528,7 @@ The two-step workflow is: call `scope=overview` first to see which slices have d
 
 **Known client-layer caveat.** The tool's declared JSON schema is still empty (`{properties: {}, type: "object"}`). Schema-strict MCP clients strip all parameters before sending, and the server then rejects with *"No matching discriminator: scope"*. If you see that error, you're on a client that's stripping params — switch clients or use the §8.8 workaround. Cowork and other pass-through clients send the params through and the call succeeds.
 
-**`scope=owned` 422 caveat (April 2026).** Confirmed intermittent on at least one production project: `scope=overview`, `scope=editorial`, `scope=reference`, and `scope=ugc` all returned 200 OK in the same session where `scope=owned` returned HTTP 422 at `POST .../get-action-owned`. The error surface (path exposed, no schema-mismatch details) points to a server-side issue on the owned endpoint, not client-side parameter stripping. If you hit it, the overview response already includes the OWNED opportunity score, relative-strength tier, and gap percentage per `url_classification` — that's usually enough for the strategic read without the drill-down text. For the full owned-URL gap list, fall back to §8.8's local approximation (filter `get_url_report` with the `gap` filter against the own brand's domains).
+**`scope=owned` 422 caveat.** Confirmed intermittent on at least one production project: `scope=overview`, `scope=editorial`, `scope=reference`, and `scope=ugc` all returned 200 OK in the same session where `scope=owned` returned HTTP 422 at `POST .../get-action-owned`. The error surface (path exposed, no schema-mismatch details) points to a server-side issue on the owned endpoint, not client-side parameter stripping. If you hit it, the overview response already includes the OWNED opportunity score, relative-strength tier, and gap percentage per `url_classification` — that's usually enough for the strategic read without the drill-down text. For the full owned-URL gap list, fall back to §8.8's local approximation (filter `get_url_report` with the `gap` filter against the own brand's domains).
 
 **When to use §8.8 (approximate locally) instead:**
 - Running on a schema-strict client that strips params.
@@ -592,7 +592,7 @@ This is especially important when scripting bulk retags — an unmerged call sil
 
 Unlike some other AI-visibility tools where custom prompt tracking exposes separate language and locale fields, Peec's `create_prompt` takes **only** a `country_code` (two-letter ISO, e.g. `DE`, `GB`, `US`) and the prompt text. Language is inferred from the text itself. Practical implication: when building multi-market prompt sets, you manage language at the level of the prompt text (write the German prompt in German; write the French prompt in French). There's no separate field to set.
 
-The allowed country codes are constrained to a fixed enum of **92 ISO 3166-1 alpha-2 codes** as of April 2026, covering most of Europe, the Americas, Middle East/North Africa, and Asia-Pacific. If your target country isn't on the list, the call will fail validation.
+The allowed country codes are constrained to a fixed enum of **92 ISO 3166-1 alpha-2 codes** at last verification, covering most of Europe, the Americas, Middle East/North Africa, and Asia-Pacific. If your target country isn't on the list, the call will fail validation.
 
 ### 7.16 `create_prompt.text` max length is 200 characters
 
@@ -608,7 +608,7 @@ Setting `topic_id: null` (not empty string, not omitted) removes the prompt's to
 
 `list_projects` and `list_models` have **no pagination parameters at all**. `list_projects` accepts only `include_inactive` (boolean); `list_models` accepts only `project_id`. These tools return the full set in a single call, so the truncation trap doesn't apply there — but if you're coding a generic paginator, special-case them.
 
-**Per-tool limit caps differ — June 2026 drift.** The "max 10000" above is no longer uniform: `list_search_queries` now hard-caps `limit` at **1000**, and its description explicitly says not to request 10000 but to paginate with `offset`. Other `list_*` tools retained the 10000 cap at last check. Treat every quantitative cap in this section as a snapshot with a verification date — **check the live tool schema before relying on any max value**, and expect per-tool divergence rather than a single global cap. The `limit=1` totalCount probe (§4) pairs well with this: size the dataset first, then pick a limit/offset plan that fits the tool's actual cap.
+**Per-tool limit caps differ — later drift.** The "max 10000" above is no longer uniform: `list_search_queries` now hard-caps `limit` at **1000**, and its description explicitly says not to request 10000 but to paginate with `offset`. Other `list_*` tools retained the 10000 cap at last check. Treat every quantitative cap in this section as a snapshot — **check the live tool schema before relying on any max value**, and expect per-tool divergence rather than a single global cap. The `limit=1` totalCount probe (§4) pairs well with this: size the dataset first, then pick a limit/offset plan that fits the tool's actual cap.
 
 **Two safe patterns for full-state reads on paginated tools:**
 
@@ -639,7 +639,7 @@ The schema declares `regex` as `{anyOf: [{type: "string"}, {type: "null"}]}`. Pa
 
 ### 7.22 Deprecated fields to avoid
 
-Peec's API has sunset several fields in 2026. Don't rely on them, and if you find older tooling that does, flag for upgrade:
+Peec's API has sunset several fields. Don't rely on them, and if you find older tooling that does, flag for upgrade:
 
 - `citation_avg`, `usage_count`, `usage_rate` — deprecated 2026-03-19 (v0.12.0) per Peec's API changelog; still returning but scheduled for removal. The modern equivalents are retrieval/citation counts split per entity.
 - `normalizedUrl` — **removed** (not just deprecated) 2026-03-06 (v0.9.0) from the Get URLs Report endpoint. Any tooling still referencing this field will silently get `undefined`. Treat the raw `url` as canonical.
@@ -648,10 +648,10 @@ If a Peec API field appears in a response but isn't documented in the current do
 
 ### 7.23 HTTP API has features the MCP doesn't expose (yet)
 
-Peec's HTTP API (separate from the MCP server, same platform) exposes functionality that is **not** callable via the MCP surface as of April 2026. Specifically:
+Peec's HTTP API (separate from the MCP server, same platform) exposes functionality that is **not** callable via the MCP surface at last verification. Specifically:
 
 - **Prompt and topic suggestions** with accept/reject endpoints — Peec can suggest prompts or topics based on project context, but these live in the HTTP API, not the MCP.
-- **Model channel listing** (`list-model-channels`) — exposes finer detail about which models/channels a plan has access to. (June 2026: this one has since crossed over — it's now exposed via MCP as `list_model_channels`, and `list_models` is marked deprecated in its favour. See §3 / §7.1.)
+- **Model channel listing** (`list-model-channels`) — exposes finer detail about which models/channels a plan has access to. (Update: this one has since crossed over — it's now exposed via MCP as `list_model_channels`, and `list_models` is marked deprecated in its favour. See §3 / §7.1.)
 
 Why this matters for the agent: do **not** hallucinate MCP tools for these capabilities. If a user asks for "prompt suggestions", the MCP has no tool for that; either direct them to the Peec UI (where the feature lives) or, if they want programmatic access, to the HTTP API. The MCP surface announced via `tools/list` is the authoritative set for MCP agents — and, as the `list_model_channels` crossover shows, HTTP-only features can migrate into it over time.
 
@@ -677,7 +677,7 @@ Practical implications for agents:
 
 ### 7.25 Authoritative source of truth for the tool catalogue
 
-Peec's own documentation at `https://docs.peec.ai/mcp/tools` now enumerates all 27 tools — 15 read and 12 write (grouped under a single "write tools" heading that covers `create_*`, `update_*`, and `delete_*`). Earlier versions of this skill flagged that page as omitting `list_search_queries`, `list_shopping_queries`, and the entire write/destructive surface; those omissions have been corrected upstream as of April 2026. (And the catalogue keeps moving: June 2026 added `list_model_channels` — see §3.)
+Peec's own documentation at `https://docs.peec.ai/mcp/tools` now enumerates all 27 tools — 15 read and 12 write (grouped under a single "write tools" heading that covers `create_*`, `update_*`, and `delete_*`). Earlier versions of this skill flagged that page as omitting `list_search_queries`, `list_shopping_queries`, and the entire write/destructive surface; those omissions have since been corrected upstream. (And the catalogue keeps moving: `list_model_channels` was added later — see §3.)
 
 In general, when the docs and the MCP disagree on surface or behaviour, **the authoritative source is what the MCP server announces on connection via `tools/list`** — not any prose description. Prose drifts; the tool catalogue is generated from the server's real schema. This skill documents per-tool behaviour (including the bits the docs still omit — empty-schema on `get_actions`, column asymmetries between reports, the `list_prompts.volume` type mismatch, etc.), not the tool list itself.
 
@@ -858,7 +858,7 @@ Practical implication: do not build UI/validation logic on the assumption that n
 
 ### 7.37 Peec report tools return FIVE different metric types — treat each column by its type, not by name
 
-**High severity — load-bearing interpretation rule.** Previous skill versions described a "three-scale" problem. Fresh testing in April 2026 revealed it's actually **five** distinct metric types, and the difference between them matters a lot. Getting this wrong produces report numbers that are off by 100× or that make no sense at all.
+**High severity — load-bearing interpretation rule.** Previous skill versions described a "three-scale" problem. Fresh testing revealed it's actually **five** distinct metric types, and the difference between them matters a lot. Getting this wrong produces report numbers that are off by 100× or that make no sense at all.
 
 **The five metric types in any Peec report row:**
 
@@ -1004,8 +1004,8 @@ confirm the label column is populated in the returned payload.
 
 `list_search_queries` is documented as "the sub-queries the AI engine
 fanned out to during retrieval" — but in practice some engines return
-zero rows no matter the date range or filter combination. Verified as
-of April 2026 across five production projects:
+zero rows no matter the date range or filter combination. Verified
+across five production projects:
 
 | Engine (`model_id` / channel) | Fanout data? |
 | --- | --- |
@@ -1061,13 +1061,13 @@ probing. Until it does, the pre-flight checklist (item 11) enforces
 scope confirmation at the agent level.
 
 **Re-verification cadence.** This table captures engine coverage as
-verified in April 2026. Peec may expand fanout coverage without
+last verified. Peec may expand fanout coverage without
 announcement — re-probe the three zero-row engines on each major
 project-tune-up session, and treat any positive result as a bonus
 capability to integrate into §8.3. The authoritative check is always
 a live per-engine call, not a memory of the last table state.
 
-**June 2026 re-verification.** Per the cadence note above: on a
+**Later re-verification.** Per the cadence note above: on a
 production project with ChatGPT, AI Overview, and Copilot active,
 100% of ~2,000 fanout rows over a six-week window carried
 `chatgpt-scraper` / `openai-0`; AI Overview and Copilot contributed
@@ -1086,7 +1086,7 @@ flag interior gaps in any time-series built on fanout or chat data.
 
 ### 7.42 `list_prompts.volume` is a string ordinal, not an integer; `volume_status` is not exposed
 
-`list_prompts` returns a `volume` column per prompt as of April 2026 — the
+`list_prompts` returns a `volume` column per prompt — the
 search-volume signal that was previously only visible in the Peec UI is now
 pullable via MCP. But two details about this field catch agents out:
 
@@ -1097,7 +1097,7 @@ with lowercase string ordinals: `"very low"`, `"low"`, `"medium"`,
 coerce to NaN or throw. Treat the field as an enum of 5 ordered strings
 and map to integers client-side if you need numeric sorting.
 
-Observed distribution across projects tested in April 2026: the modal
+Observed distribution across tested projects: the modal
 value on most projects is `"very low"`; `"very high"` is rare. Don't
 assume a normal distribution across the five ordinals.
 
@@ -1610,7 +1610,7 @@ Spotted a discrepancy between this skill and Peec's actual behaviour? Discovered
 - **Issues and PRs:** [github.com/rebelytics/peec-ai-mcp](https://github.com/rebelytics/peec-ai-mcp)
 - **Workflow:** See `CONTRIBUTING.md` in this repo for what's in scope and how to submit changes.
 
-The goal is that anyone pulling this skill six months from now gets behaviour grounded in current reality, not an April 2026 snapshot. Contributions are the mechanism that keeps that promise.
+The goal is that anyone pulling this skill six months from now gets behaviour grounded in current reality, not a stale snapshot. Contributions are the mechanism that keeps that promise.
 
 ---
 
