@@ -55,7 +55,7 @@ Contributors are attributed through Git history — every merged PR carries its 
 - Section headers are numbered (`§4.2`); keep that numbering stable across patch versions because external references rely on it.
 - Use the terminology Peec uses in tool descriptions (brand, topic, tag, prompt, chat, source, retrieval, citation) — not your own aliases.
 - Flag anything plan-dependent explicitly.
-- Date-stamp behavioural claims ("as of April 2026…") when they might change.
+- Phrase behavioural claims about Peec itself as verified-at-last-check facts with a re-verification instruction ("at last verification the MCP returned X — confirm against `tools/list` on connection"); an undated present-tense claim goes silently wrong.
 
 ## Code of conduct
 
