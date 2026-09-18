@@ -21,6 +21,8 @@ Part of the **peec-ai-mcp** skill (CC BY 4.0 — Eoghan Henn / [rebelytics.com](
   - 8.9 Full competitive gap analysis (composite)
   - 8.10 Source authority audit (composite)
   - 8.11 Test entity lifecycle (safe experimentation pattern)
+  - 8.12 Label a URL shortlist with prompt text and engine names (two-call join)
+  - 8.13 Bulk chat extraction — fan out `get_chat`, harvest from the transcripts
 
 ---
 
@@ -30,9 +32,13 @@ The recipes below collectively cover Peec's six published primary use cases (per
 
 **Start here for the most common request type.** When a user says "give me a visibility report", "full report", "monthly report", or anything comparable, reach for the composite meta-recipe in **§8.0** first — it sequences the atomic recipes below into the three common depth tiers (quick / standard / deep).
 
-**Composite recipes** answer recurring multi-step questions that the atomics only partially cover: **§8.8** is a local fallback for `get_actions` when the native tool is unavailable (e.g. schema-strict client strips params — see §7.12); **§8.9** is the full competitive gap analysis flow (strategic view, not just a URL list); **§8.10** is a source-authority audit (who's citing whom, and at what rate); **§8.11** is the safe test-entity lifecycle pattern for agent-driven experimentation.
+**Composite recipes** answer recurring multi-step questions that the atomics only partially cover: **§8.8** is a local fallback for `get_actions` when the native tool is unavailable (e.g. schema-strict client strips params — see §7.12); **§8.9** is the full competitive gap analysis flow (strategic view, not just a URL list); **§8.10** is a source-authority audit (who's citing whom, and at what rate); **§8.11** is the safe test-entity lifecycle pattern for agent-driven experimentation; **§8.12** joins a URL-report pull to prompt text and engine names (the labelling step every citation shortlist needs); **§8.13** is the bulk `get_chat` extraction pattern for raw exports of several hundred chats.
 
 **Reporting convention — split prompt-level stats branded vs non-branded by default.** Before reporting any prompt-level proportion (visibility, mention rate, fanout coverage, "N of M prompts show X"), check `list_tags` for a branded/non-branded taxonomy on the project. If the tags exist, report the split unprompted — don't wait to be asked. A blended aggregate hides the number stakeholders actually want: e.g. "89% of prompts show third-party directory mentions in fanout" can decompose into ~91% on non-branded prompts but only ~60% on branded ones — materially different stories, and the non-branded (discovery) rate is usually the one that matters strategically. Reserve the blended figure for projects whose tag taxonomy doesn't support the split, and say so when you do.
+
+**Define "branded" by the prompt text, not by the tag.** The tag — Peec's own `branded` system tag or a user-defined one — is a **hint**, not the definition. Two failures are routine and they push in opposite directions: prompts created before the tag existed carry brand names without it (under-count), and a category or theme tag can carry prompts that name no brand at all (over-count). Observed on a live project: a brand-category tag contained a generic "best own-label product" prompt, which is not a branded prompt by any useful definition.
+
+The honest rule is a **case-insensitive regex over `list_prompts.text` for the brand's own names and aliases** — pull the alias list from `list_brands` (the `is_own=true` row's `name` + `aliases`) rather than typing it out, so the prompt classification and the mention detection agree on what the brand is called. Use word boundaries (`\bBRAND\b`) for the same reason §7.38 does: a short brand token matches inside unrelated words. Then reconcile: rows where the tag and the regex disagree are worth listing for whoever owns the project — each one is either a tagging gap or a prompt that has drifted from its category. Report which definition produced the split, and where a client's own definition of "branded" differs (some count competitor-named prompts as branded, most do not), use theirs and say so.
 
 ### 8.0 "Give me a full visibility report" (meta-recipe)
 
@@ -202,6 +208,13 @@ This is a **sibling workflow to §8.2a, not a continuation of it.** An agent try
 
 **Why `gap >= 2` and not `gap >= 1`:** `gap=1` surfaces pages where a single competitor appears once without the own brand — often just incidental coverage (a passing mention in a long article). `gap>=2` filters to pages where *multiple* competitors co-appear without the own brand, which is a stronger signal of a systematic editorial exclusion worth pursuing. Dial down to `gap>=1` for very new or low-data projects; dial up to `gap>=3` for mature projects with hundreds of retrievals per domain where the noise threshold is higher. Two is the pragmatic default.
 
+**What `gap` is actually measuring.** The gap filter is defined over the same brand-mention signal the reports expose as `mentioned_brand_ids` / `mentioned_brand_count`, and that signal is **page-level** — brands whose name or alias was found in the cited page's own content, not brands co-appearing in the answers (§7.38). So a `gap>=2` row says "this page names competitors and does not name us", which is exactly the claim an editorial-placement list needs, and it is a statement about the page rather than a hypothesis about it. Two preconditions before acting on the list:
+
+- **Run the controls once per project.** Fetch a handful of rows the field says carry the own brand and a handful it says do not, and check the live HTML. The disagreement rate is the list's error rate. Expect near-zero; if it is not, something in the brand configuration is wrong and step 1 should not drive spend.
+- **Check the brand roster for substring collisions first.** Detection is plain substring matching, so a brand whose name or alias is a dictionary word or a short shared acronym produces false mentions that *suppress* gap rows (the own brand looks present when it is not) and false competitor mentions that *manufacture* them. The detector in §7.38 — the share of URLs where one short-named brand is the only mention — takes one pass over the report. Fix with a word-boundary regex before filtering on `gap`.
+
+A row that survives both checks still carries one ambiguity worth keeping in the analysis: the own brand may be absent from the page, or present only under a legal-entity or alternative name the roster does not cover. The first is a coverage problem, the second an entity-disambiguation problem, and they call for opposite interventions — step 3's `get_url_content` pull settles which one you have.
+
 The two flows answer different questions. §8.2a: "where is our source authority weak?" §8.2b: "which specific editorial placements should we pursue?" Most projects need both, run independently.
 
 ### 8.3 "What's the AI engine actually searching for?"
@@ -236,6 +249,10 @@ cover; don't say "what the AI searches for".
 3. For each, create_brand with {name, domains: [domain], aliases: [...],
    optional regex}. Confirm with user first if multiple brands.
 ```
+
+Two notes on step 2, both from §7.38. First, `mentioned_brand_ids` is page-level — it lists brands found in the cited pages' content, not brands co-appearing in answers — so this recipe is reading "which tracked brands does the corpus talk about", which is the right question for roster completeness. A corporate domain with high retrieval and an empty or thin mention list is a candidate precisely because nothing in the roster matches its content.
+
+Second, step 3 is where substring collisions are created. Peec matches brand names and aliases as **plain substrings**, so any name or alias that is also a common word, or a short acronym another organisation uses, will match across unrelated pages from the moment it is added and quietly pollute every later gap and mention analysis. Set a word-boundary `regex` (`\bBRAND\b`, plus exclusion of a colliding context) at creation time for those brands rather than retrofitting it — and after a roster change, re-run the §7.38 detector (the share of URLs where one short-named brand is the only mention) to confirm the new entry behaves.
 
 ### 8.5 Add a tagged prompt set
 
@@ -505,5 +522,67 @@ remains anywhere.
 **Baseline match ≠ zero residual.** A quiet bug: the prompt count returned to baseline but one of the baseline prompts had its `tag_ids` mutated during the test and wasn't reverted. Prefer capturing **all field values** (not just IDs) on any entity you mutate, and diff-verify those fields back to baseline after revert — not just counts. Count-only verification is necessary but not sufficient.
 
 **When to use a separate test project instead.** For very-large-scale stress tests (>50 write operations) or anything that might hit rate limits, spin up a dedicated Peec project rather than prefixing entities in the live one. The test-prefix pattern is for single-session, <50-op experimentation.
+
+### 8.12 Label a URL shortlist with prompt text and engine names (two-call join)
+
+The question behind this recipe is "which prompts, on which engines, are citing these pages?" — the last step before a citation shortlist is handed to anyone. The obstacle is that the report returns **IDs only**: `prompt_id` is an opaque `pr_…` and `model_channel_id` is an opaque string. Neither is readable, and no single call returns both the metrics and the labels.
+
+```
+# Call 1 — the pull, dimensioned so the join keys come back
+get_url_report(
+  project_id, date_from, date_to,
+  dimensions=[prompt_id, model_channel_id],
+  filters=[{field: url, operator: in, value: [<shortlist URLs>]}],
+  limit=<bounded — see §7.32>
+)
+→ rows keyed on pr_… plus model_channel_id, and (because
+  model_channel_id is a dimension) a model_channel_name column
+  that labels the engine for free — §7.6.
+
+# Call 2 — the labels for the prompt keys
+list_prompts(project_id, fields=[id, text, tags], limit=10000)
+→ pr_… → prompt text (+ tags, for the branded split above)
+
+# Join client-side on prompt_id. Persist BOTH payloads to files first.
+```
+
+Four things make or break this:
+
+- **Add `model_channel_id` as a dimension even if you don't need a per-engine split**, because that is the only way `model_channel_name` appears (§7.6). Resolving engine names afterwards from `list_model_channels` is the route that fails on historical rows.
+- **Filter the URL report to the shortlist**, don't pull the project and narrow afterwards. `url` is a supported filter (§7.31) and the shortlist is usually a few dozen rows; an unfiltered dimensioned pull over a wide window is a reliable way to trip the output cap (§7.32).
+- **Persist both results to files as they land.** The join is the step most likely to be separated from the pull by a context compaction, and both payloads are needed again at write-up time (§7.32).
+- **Watch the pagination default on call 2** — `list_prompts` truncates silently at 100 (§7.18). A shortlist labelled from a truncated prompt list produces rows with missing text that look like data gaps rather than a paging mistake.
+
+Where the deliverable splits branded from non-branded, do the classification on the joined `text` column, not on `tags` — see the reporting convention at the top of §8.
+
+### 8.13 Bulk chat extraction — fan out `get_chat`, harvest from the transcripts
+
+`get_chat` returns one chat per call, and a raw export ("give the outreach team the full answer text, sources and brand mentions for the last run") routinely needs several hundred. Two obvious approaches both fail: pulling them into the main context costs on the order of a **million tokens** for a few hundred chats, and asking subagents to write the payloads out means a model **re-typing raw data**, which is a fidelity risk on exactly the artefact that must be verbatim. The working shape delegates the calls but harvests the record:
+
+```
+1. list_chats(project_id, …, include_archived_prompts=true if the
+   project is lapsed — §7.43) → the full id index. Persist it.
+2. Split the ids into batches of ~35.
+3. One subagent per batch, with a deliberately empty job:
+   call get_chat on each id in the list, reply only "done: N".
+   No summarising, no writing files, no quoting payloads.
+4. Harvest the tool results byte-exact from the session transcripts —
+   every tool result is already persisted there verbatim. The mechanics
+   belong to the harness, not to this skill: find where your agent
+   runtime persists tool results (the session transcript, plus a
+   separate per-agent transcript for delegated calls), walk the lines
+   with a script and pull the `tool_result` payloads. Two traps that
+   hold on any harness: the payload is usually a JSON *string* nested
+   inside the JSON line, so a prefilter on the raw line must match the
+   escaped form of a key and the walker must `json.loads` string
+   payloads; and oversized results are typically written to a separate
+   directory rather than inline, so the loader has to read both places.
+5. Reconcile the harvested ids against the step-1 index, and refetch
+   the misses.
+```
+
+**Step 5 is not optional.** The known hazard is silent: a subagent that hits a rate limit (§7.24) part-way through its batch reports "done" for the batch anyway, having skipped the failed ids — observed as 2 of 35 missing with no error surfaced to the orchestrator. Set the batch size low enough to stay inside the rate limit, and treat the index-vs-harvest diff as the completion check, the same way §8.7 uses count reconciliation for writes.
+
+**When to reach for this.** Per-item endpoints where the payload must survive unchanged: `get_chat` is the one in current use, and `get_url_content` (§6.6) has the same shape at volume. For anything you only need to *count* or *sample*, the deliberate-overflow-and-grep pattern in §7.32 is cheaper — this recipe is for when the raw rows themselves are the deliverable.
 
 ---

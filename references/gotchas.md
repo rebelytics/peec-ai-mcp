@@ -49,6 +49,7 @@ Part of the **peec-ai-mcp** skill (CC BY 4.0 — Eoghan Henn / [rebelytics.com](
   - 7.40 `get_brand_report` dimension columns may return null labels (observed on `model_id`)
   - 7.41 `list_search_queries` (fanout) returns zero for AI Overview, AI Mode, and Copilot — other engines vary
   - 7.42 `list_prompts.volume` is a string ordinal, not an integer; `volume_status` is not exposed
+  - 7.43 An ended trial or inactive project stays fully readable — but reports nothing about its own date range
 
 ---
 
@@ -63,6 +64,8 @@ The MCP's `model_id` filter/dimension enum on report tools listed 19 values at i
 **Practical implication.** If you build a report from the `model_id` filter enum (19 values) instead of from `list_models` (16 values), three of those engines will return clean empty envelopes regardless of plan tier — treat them the same way you'd treat any other inactive engine: skip, don't report as "zero visibility". If the user asks about one of the three non-listed engines (`claude-sonnet-4`, `claude-haiku-4.5`, `grok-4` on most projects), tell them it's not available via the MCP's listing surface even though the enum accepts it.
 
 **Drift — the catalogue grew and `list_models` is now deprecated.** A later re-verification against the live schemas found: the `model_id` enum has grown to **24 values** (adding, among others, `grok-4.3`, `qwen-3-6-plus`, `qwen-3-7-plus`, `amazon-rufus-scraper`, `deepseek-v4-pro`); `list_models` now returns **18 rows**, and its own tool description marks it **"Deprecated — prefer `list_model_channels`"** — a tool that has been added to the MCP surface (§3). The structural lessons above are unchanged (the filter enum is a superset of the listing tool's output; `is_active` gates real data), but the specific counts in this section are snapshots. **Re-verify any engine/channel count against the live tool schema before quoting it** — the catalogue is the fastest-drifting part of the surface, and Amazon Rufus / Qwen-class engines arriving unannounced shows new providers can appear without notice.
+
+**Engine availability by country is not answerable from the docs — check the project.** Which engines Peec offers in a given market is a recurring client question (typically in the form "can you track DeepSeek / Qwen for our German and French sites?"), and a search of the vendor documentation does not settle it: no published per-country engine matrix was found, and the absence of one is not evidence that availability is uniform. **Record this as unverified rather than asserting it either way.** The only reliable answer is empirical and per-project: run `list_model_channels(project_id)` — or `list_models(project_id, is_active=true)` on older surfaces — on a project configured for that market and report what comes back, naming the project and date the answer came from. An engine's presence in the `model_id` enum says nothing about its availability in a given country, on a given plan, or on a given project (§7.8 cause 4).
 
 ### 7.2 `*-scraper` models measure consumer behaviour; raw model IDs measure API responses
 
@@ -140,6 +143,21 @@ Peec's `/understanding-chats` docs describe the cadence as "daily" and `/setting
 Likely explanations — not conclusively verified:
 
 - **Model channels multiply the count.** Each model (e.g. `gpt-4o`) can have multiple channels (`openai-0`, `openai-1`, etc.) representing different regional/setting variants. `list_chats` filters by `model_id`, but each model may emit several chats per day from different channels. The full `model_channel_id` enum observed on report tools at initial verification is: `openai-0, openai-1, openai-2, perplexity-0, perplexity-1, google-0, google-1, google-2, google-3, anthropic-0, anthropic-1, deepseek-0, meta-0, xai-0, xai-1, microsoft-0` (16 channels across 8 providers). Later re-check: the enum has since grown to **18 channels**, adding `qwen-0` and `amazon-0` (Amazon Rufus) — and the new `list_model_channels` tool (§3) is now the preferred way to resolve the live channel set rather than reading the enum.
+
+  **Resolving a channel id to a human-readable name.** No tool takes a channel id and returns a label. The two routes that work:
+
+  1. **From the data itself** — `model_channel_name` is returned as a column on the report tools, but **only when `model_channel_id` is one of the requested dimensions**. Add the dimension to the pull you were making anyway and the labels arrive with the rows, no join required. This is the route to prefer, because it labels the rows you actually have.
+  2. **From `list_model_channels`** — the live configuration for the project. Correct for current channels; see the caveat below.
+
+  **Caveat: `list_model_channels` describes the present, and historical rows outlive it.** A channel that has been retired from a project's configuration disappears from `list_model_channels` while every historical chat and report row carrying it remains. Observed: `list_model_channels` no longer returned `xai-0` for a project in which every Grok chat of the tracked period carries `model_channel_id: xai-0`. A label lookup keyed on the current channel list therefore leaves an entire provider's rows unlabelled — and, worse, invites the reading that those rows are corrupt rather than merely older than the configuration. Label historical rows from the data (route 1), and keep a hardcoded fallback map for the common ids:
+
+  ```
+  openai-0  → ChatGPT
+  google-0  → Google AI Overview
+  xai-0     → Grok
+  ```
+
+  Extend it from `model_channel_name` values as you meet them; never infer a name from the id's provider prefix alone, since a provider can expose several channels (`google-0` AI Overview vs `google-1` AI Mode) that mean materially different things.
 - **Back-fill on acceptance.** The "start running immediately" language suggests newly accepted prompts may be run multiple times shortly after acceptance to populate initial data.
 - **Error retries.** Failed prompt runs may re-run on the same day without being deduped in the chat count.
 
@@ -178,6 +196,15 @@ When a user creates a project, Peec auto-suggests competitors based on algorithm
 ### 7.10 `classification=COMPETITOR` in domain report ≠ commercial competitor
 
 In `get_domain_report`, the `classification` column can be `COMPETITOR` — but this just means "domain of a tracked competitor brand", not "direct commercial rival". Don't use it to identify competitive threats; use mention overlap + domain retrieval volume instead.
+
+**`domain_classification` is Peec's guess — never the competitor gate, and never the basis for a landscape share.** The failure is asymmetric and therefore easy to miss. Excluding the own-brand and competitor classes (e.g. `domain_classification not_in [OWN, COMPETITOR]`, rendered as *You* / *Competitor* in the UI) does reliably remove the **own** brand's domains — the `OWN` class is driven by an explicit `domains` array you control (above), so it behaves. It does **not** remove real commercial competitors: any rival shop that is not on the tracked brand roster, and several that are, land in the generic corporate class and survive the filter. In a live pull, three genuine competing retailers came through a `not_in [OWN, COMPETITOR]` filter as `CORPORATE`. The resulting list looks like a clean "third-party sources only" set and is not one.
+
+Two rules follow:
+
+- **Gate on the operator's roster, not the platform's class.** Pull the report **unfiltered**, then apply the client's own competitor list (and own-domain list) client-side. A competitor roster is a commercial judgement about who competes for the same customer; no vendor classifier has that input.
+- **Compute landscape shares unfiltered.** "Own vs competitor vs third-party share of citations" computed over a classification-filtered pull is arithmetically sound and substantively wrong — the denominator silently excludes whatever the classifier happened to file elsewhere. Filter after the aggregation, never before it.
+
+Same caution for the `domains` array in the other direction: a competitor brand with domains left unset is classified by content, not by ownership. Check `list_brands` coverage before reading any classification-derived split.
 
 **Multi-TLD brands and the `OWN` classification.** `classification=OWN` is driven by the `domains` array on the `is_own=true` brand row in `list_brands`, not by name matching or corporate-ownership inference. A brand with multiple TLDs (e.g. example.de, example.com, example.nl) will show `OWN` **only for the specific TLDs listed in that array** — all other TLDs of the same commercial entity fall back to `CORPORATE` (or whatever other classification applies). This is a project configuration completeness issue, not a classification bug. Agents auditing a domain report should check `list_brands(is_own=true).domains` first; if the array doesn't cover every TLD of the own brand, advise the user to update it via `update_brand` before drawing conclusions about "own vs. competitor" domain share.
 
@@ -452,6 +479,8 @@ Client-side schema validation reveals one additional value — `ALTERNATIVE` —
 
 The same applies to `get_domain_report` — it exposes a `classification` column (§7.30) but no classification filter. Scope by domain name (from `list_brands.domains` or step-1 results) rather than by classification.
 
+**Drift — a `domain_classification` filter field has since been observed on `get_url_report`.** Treat the filter enum above as a snapshot and re-read the live schema: a later live run accepted `{field: domain_classification, operator: not_in, value: [...]}` on the URL report, taking the *domain*-level classes of §7.30 (surfaced in the UI as *You*, *Competitor*, and so on) rather than the URL-level classes of this section. So the URL report now has **two** classification concepts with opposite filterability: `url_classification` (column only, filter client-side) and `domain_classification` (filterable server-side). Don't confuse them, and read §7.10 before using the filterable one for anything: it removes the own brand's domains reliably and real competitors not at all, which makes it unsafe as a competitor gate or as the basis of a landscape share.
+
 Recipe §8.2b (URL-level gap analysis) depends on picking among these values after the fact; an agent that narrows to `[LISTICLE, COMPARISON]` only will miss gap rows with classifications like `ARTICLE` or `HOW_TO_GUIDE` that are equally relevant to AI-search visibility. Pick the slice deliberately from the full enum, don't default to the two obvious values.
 
 ### 7.32 MCP output size limit — large responses auto-save to file
@@ -482,6 +511,8 @@ This is MCP runtime behaviour, not Peec-server behaviour. It applies to any tool
 - **Check reachability before planning the analysis.** In split host/sandbox environments (e.g. Cowork, where shell commands run in an isolated sandbox while file tools operate on the host), the overflow file is typically saved under the **host's** temp directory — a path the sandboxed shell cannot reach. `bash`/`jq`/`python` pipelines against it will fail with "no such file", while host-side file tools (Read, Grep, or their equivalents) can access it fine. Verify which execution surface can reach the saved path *before* designing the processing strategy.
 - **The saved JSON is a single line** — line-oriented tooling (line counts, Grep's count mode, Read with line offsets) is useless against it directly. The workable primitive is **match-only grep** (`-o`) with offset/head-limit probing: a pattern match with `offset=N` that returns `k < head_limit` lines means exactly `N + k` total matches. This gives exact counts and targeted extraction at trivial context cost — e.g. probing with `offset=300` and getting 23 lines back proves exactly 323 matches, without ever loading the payload.
 - **Two-stage grep converts the file into a line-based derivative.** A full-row `-o` grep over the single-line JSON whose match output itself exceeds the output cap gets persisted as a *new* tool-results file — and that second-stage file is **line-based** (one match per line). All line-oriented tooling works on it: Read pages through it with offset/limit, count mode counts correctly, and further `-o` extractions (e.g. pulling the leading `pr_…` prompt IDs off each row) are cheap. The pattern: (1) full-row `-o` grep on the single-line overflow JSON → persisted line-based match file; (2) run cheap count/extract passes against that file instead of the original. In production this turned a ~420K-char two-page fanout payload into a 300-odd-row match file that could be term-split and ID-extracted without re-reading the originals.
+- **For anything beyond counting, copy the file into a scratch directory and parse it with a script.** Grep primitives are right for sizing and spot-extraction; they are the wrong tool once the task is a join, a group-by, or a shortlist that will be revisited. The durable pattern is: copy the saved payload to a writable scratch path the execution surface can reach, then `json.load` it and work on the parsed rows (zip `columns` with each `rows` entry — §4). Benefits compound: the parse is exact rather than pattern-matched, intermediate results can be written alongside as small files, and the dataset survives a context compaction that would otherwise force a re-pull. `get_url_report(limit=1000)` over a multi-week window lands around 150 KB and is a routine trigger. Nothing about this is Peec-specific — it is the standard handling for any overflow-prone endpoint, so an agent that has done it once on another MCP already knows the moves.
+- **Persist every result a later step will need.** When two calls have to be joined — the classic being a report keyed on `prompt_id` plus a `list_prompts` call to label those IDs (§8.12) — write **both** payloads to files as they arrive. A compaction between the pull and the analysis otherwise costs a full re-pull, and on a project whose data window has closed (§7.43) a re-pull is not always as cheap as it sounds.
 - **Deliberate overflow is a legitimate strategy.** When you only need pattern counts or examples from a large dataset, intentionally triggering the overflow (e.g. `list_search_queries(limit=1000)`) and grepping the saved file is far cheaper than paging hundreds of KB of rows through the conversation context. Size the dataset first with the `limit=1` totalCount probe (§4), then decide: in-band paging for small sets, overflow-and-grep for large ones.
 
 ### 7.33 Parameter-fuzz error-layer catalogue — know which layer rejected your call
@@ -569,9 +600,22 @@ Practical implication: do not build UI/validation logic on the assumption that n
 
 **Caveat on Ratio denominators — engine-returned empty responses inflate "non-mention" counts.** `visibility` and `share_of_voice` are Ratios whose denominator is "chats in scope". That denominator includes chats where the engine returned an empty or placeholder response body (see §7.8 cause 6) — i.e. the engine didn't fail to surface the brand, it failed to answer at all. Where empty-response frequency is non-trivial, either (a) filter those chats out of the denominator before reporting, or (b) surface an "engine no-answer rate" alongside visibility so the reader can see the distinction. The headline number alone will understate true brand visibility by roughly the empty-response rate.
 
-### 7.38 Aggregated reports may reference brand IDs that `list_brands` no longer returns
+### 7.38 `mentioned_brand_ids` is page-level and substring-matched — and may reference brand IDs that `list_brands` no longer returns
 
-`get_domain_report` and `get_url_report` include a `mentioned_brand_ids` array (and `mentioned_brand_count` column) that record every tracked brand that co-appeared in the responses indexed by that domain/URL. This array can contain brand IDs that **do not appear in the current `list_brands` output** — typically 1–3 extra IDs.
+**What the field measures.** `get_domain_report` and `get_url_report` include a `mentioned_brand_ids` array (and `mentioned_brand_count` column) listing every tracked brand whose name or alias was found **in the cited source page's own content**. It is a property of the *page*, not of the answers that cited it. Peec's own documentation says as much — the URL table's Mentions column is "which brands were mentioned on this specific URL", and the URL detail page's Brands Mentioned is "which brands appear in the source content".
+
+An earlier revision of this skill read the field as answer-level (brands co-appearing in the responses that cited the URL). That was wrong, and it inverted the advice built on it. The cheapest disproof is the empty list: a top-authority URL retrieved hundreds of times in a week can carry `mentioned_brand_ids: []`, which cannot happen at answer level, because the answers citing it plainly mention brands. Confirmed on a live sample with two controls — of 18 pages where the own brand was present in the fetched HTML, Peec listed it on 17 (the one miss carried no brands at all, i.e. the page had not been scraped); of ~130 candidates where the own brand was absent from the field and a competitor present, none had the own brand on the live page.
+
+**Consequence for gap analysis.** Because the field reports page content, "own brand absent, competitor present" is a direct statement about the page — usable as a prefilter for editorial-gap and outreach target lists rather than merely a hypothesis about them. Run one positive and one negative control per project before leaning on it (fetch a handful of pages the field says carry the brand, and a handful it says do not), then trust it. Do not carry this reading across to other platforms: a same-named field elsewhere may well be answer-level, and the two measure different objects.
+
+**Detection is plain substring matching on name and aliases — not word-boundary aware.** Any brand whose name or alias is a common word or another organisation's acronym generates large volumes of false mentions:
+
+- A short brand token that occurs inside longer unrelated English words will match on every page containing that word. Observed: a hyphenated brand token that is also a common verb matched on 422 of 3,000 sampled URLs in one market, and was the *only* brand listed on every one of them.
+- A three-letter acronym alias collides with unrelated organisations using the same acronym — especially across languages, where a government agency or standards body may share the initials. In one market this single alias dominated the entire gap pool.
+
+**Fix:** configure a word-boundary regex for any such brand (`\bBRAND\b`, plus exclusion of the colliding context or domain where an acronym is shared). **Cheap detector:** compute the share of sampled URLs where one short-named brand is the *only* brand listed. A brand that appears alone on a large, topically unrelated slice of the corpus is matching a word, not being mentioned. Run this before any gap list is built, because false mentions suppress gap rows (the brand looks present) while false competitor mentions manufacture them.
+
+**Unresolvable IDs.** This array can also contain brand IDs that **do not appear in the current `list_brands` output** — typically 1–3 extra IDs.
 
 **Likely cause:** soft-deleted brands. Peec's soft-delete (§7.34) removes the brand from `list_brands` filter matches but preserves the historical aggregated data. A brand that was tracked three months ago and then deleted will still appear in any aggregated report whose date range overlaps its active period.
 
@@ -798,5 +842,20 @@ input for prompt-tracking strategy: a project where 90% of prompts are
 high-volume head-term prompts added for commercial coverage. The
 companion `peec-ai-tracking-strategy-builder` skill (§9.1) uses this
 field directly in the volume-signal / allocation step.
+
+### 7.43 An ended trial or inactive project stays fully readable — but reports nothing about its own date range
+
+**A subscription state is not an access state.** When a trial ends, the project stops collecting new data; it does not stop serving the data it already holds. Verified four months after a trial ended, on a project `list_projects` reported as `TRIAL_ENDED`: the report tools, `list_chats` and `get_chat` all returned normally, with full answer text, sources carrying citation counts and positions, brand mentions and fan-out queries. Nothing was degraded, redacted or truncated. So before telling a user their data is gone because the plan lapsed, **probe the API** — the claim is cheap to check and expensive to get wrong.
+
+Two flags are needed to see such a project at all, and both default to off:
+
+- **`list_projects(include_inactive=true)`** — without it, an ended-trial project is simply absent from the listing, which reads exactly like "no such project" or "wrong account". With it, the project appears with its `status` (e.g. `TRIAL_ENDED`).
+- **`list_chats(..., include_archived_prompts=true)`** — prompts belonging to a lapsed project are archived, and their chats are excluded from the default response. Without the flag the project looks live but empty, which is the §7.8 failure mode in its most convincing form.
+
+**Retention after trial end is not documented. Pull promptly.** The observation above establishes that the data survived four months; it establishes nothing about month five. Treat any read from a lapsed project as a window that may close without notice: extract what the work needs in one pass and persist it to files (§7.32), rather than planning a workflow that re-queries the project over weeks.
+
+**The project will not tell you its own date range.** A lapsed project exposes no "data available from X to Y" field, and the report tools require explicit `date_from`/`date_to` (§8) — so an over-wide range returns rows only for the period that has data, with no signal about where that period starts or ends, and a mis-centred range returns an empty envelope indistinguishable from the seven causes in §7.8. **Discover the window with a `week`-dimension probe:** request a report over a deliberately generous range with `date` (or `week`, where the dimension set offers it) as the dimension and a small limit, and read the first and last populated buckets off the result. That is one call, and it converts a guess into a measured window that every subsequent pull can be scoped to. The same probe is the honest way to answer "how much data is there?" for a live project whose start date nobody remembers.
+
+**Labelling caveat.** Historical rows in such a project can carry model-channel ids that the project's *current* `list_model_channels` output no longer includes — see §7.6 for the resolution routes and the fallback id→name map. The configuration moved on; the rows did not.
 
 ---

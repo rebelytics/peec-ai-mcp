@@ -18,6 +18,8 @@ The `filters` param on `get_domain_report` and `get_url_report` accepts a specia
 
 Returns domains/URLs where **competitors appear but the user's own brand doesn't**. Essential for competitive content audits.
 
+"Appear" here means **in the cited page's own content**, not in the answers citing it (§7.38) — so a gap row is a claim about the page, usable directly once the per-project controls are run. Because that detection is plain substring matching on brand names and aliases, a brand whose name or alias is a dictionary word or a shared short acronym silently corrupts the filter in both directions: false own-brand mentions hide real gaps, false competitor mentions invent them. Check the roster for collisions and set word-boundary regexes (§6.3) **before** filtering on `gap`.
+
 ### 6.2 `mentioned_brand_count` filter
 
 ```json

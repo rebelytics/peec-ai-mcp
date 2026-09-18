@@ -12,14 +12,14 @@ Part of the **peec-ai-mcp** skill (CC BY 4.0 — Eoghan Henn / [rebelytics.com](
 
 | Tool | Purpose |
 |---|---|
-| `list_projects` | All projects accessible to the authenticated user |
+| `list_projects` | All **active** projects accessible to the authenticated user — pass `include_inactive=true` to also surface lapsed ones (e.g. `TRIAL_ENDED`), which remain fully readable (see §7.43) |
 | `list_brands` | Tracked brands in a project (own + competitors) |
 | `list_topics` | Topics (folder-like groupings of prompts) |
 | `list_prompts` | Prompts, filterable by topic_id or tag_id |
 | `list_tags` | Cross-cutting labels applied to prompts |
 | `list_models` | AI engine catalog (see §7: `is_active` filter is critical; now deprecated — prefer `list_model_channels`) |
 | `list_model_channels` | Per-channel engine catalogue (regional/setting variants behind each model) — a later addition to the MCP surface; the preferred channel-resolution tool (see §7.1 / §7.6) |
-| `list_chats` | Individual AI responses, filterable by brand/prompt/model |
+| `list_chats` | Individual AI responses, filterable by brand/prompt/model — pass `include_archived_prompts=true` to include chats from archived prompts (§7.43) |
 | `get_chat` | Full chat payload (messages, sources, products, brands_mentioned) |
 | `list_search_queries` | Sub-queries the AI engine fanned out to |
 | `list_shopping_queries` | Shopping-mode queries + product listings |
@@ -97,6 +97,7 @@ Helpers:
   - `update_*` and `delete_*` tools return `{success: true}` — no echo of the updated record, no diff.
   - Either way, call `list_*` afterwards if you need to verify state.
 - **Plan credits — only `create_prompt` charges.** Per the tool's own description, creating a prompt consumes plan credits (prompts are the billable unit in Peec's pricing; every tracked prompt runs daily across the enabled engines). `create_brand`, `create_topic`, `create_tag`, and all `update_*`/`delete_*` tools do **not** consume plan credits. Before bulk-creating prompts on a TRIAL or small paid plan, check the remaining credit balance in the Peec UI — there's no `get_credit_balance` MCP endpoint. Failed `create_prompt` calls from credit exhaustion return a billing-shaped error rather than a schema error.
+- **Where the credit rules are written down.** The vendor documents the billing unit at [`docs.peec.ai/agencies/understanding_credits`](https://docs.peec.ai/agencies/understanding_credits) — the definition of a credit, the daily default run cadence, and which plan tiers unlock a cheaper cadence. Read it before quoting any cost figure to a client; cadence and the prompt × engine count are the two levers that decide what a project costs, and neither is visible through the MCP. The strategy-side implications (how to state the cost trade-off in a proposal, and the plan gate that makes "daily or weekly" wrong as a blanket claim) live in `peec-ai-tracking-strategy-builder/references/phase-a-strategy.md` §9.6.1 — cited rather than duplicated, because that is where the client conversation happens.
 - **Scales are heterogeneous within a single row.** `get_brand_report` returns four headline metrics on three different scales: `visibility` and `share_of_voice` as 0–1 ratios, `sentiment` as 0–100, `position` starting at 1 (lower = better). The columnar JSON envelope gives no hint about this. Read §7.37 before building any report layer.
 
 ---
