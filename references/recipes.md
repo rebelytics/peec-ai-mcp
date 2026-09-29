@@ -34,7 +34,7 @@ The recipes below collectively cover Peec's six published primary use cases (per
 
 **Composite recipes** answer recurring multi-step questions that the atomics only partially cover: **§8.8** is a local fallback for `get_actions` when the native tool is unavailable (e.g. schema-strict client strips params — see §7.12); **§8.9** is the full competitive gap analysis flow (strategic view, not just a URL list); **§8.10** is a source-authority audit (who's citing whom, and at what rate); **§8.11** is the safe test-entity lifecycle pattern for agent-driven experimentation; **§8.12** joins a URL-report pull to prompt text and engine names (the labelling step every citation shortlist needs); **§8.13** is the bulk `get_chat` extraction pattern for raw exports of several hundred chats.
 
-**Reporting convention — split prompt-level stats branded vs non-branded by default.** Before reporting any prompt-level proportion (visibility, mention rate, fanout coverage, "N of M prompts show X"), check `list_tags` for a branded/non-branded taxonomy on the project. If the tags exist, report the split unprompted — don't wait to be asked. A blended aggregate hides the number stakeholders actually want: e.g. "89% of prompts show third-party directory mentions in fanout" can decompose into ~91% on non-branded prompts but only ~60% on branded ones — materially different stories, and the non-branded (discovery) rate is usually the one that matters strategically. Reserve the blended figure for projects whose tag taxonomy doesn't support the split, and say so when you do.
+**Reporting convention — split prompt-level stats branded vs non-branded by default.** Before reporting any prompt-level proportion (visibility, mention rate, fanout coverage, "N of M prompts show X"), check `list_tags` for a branded/non-branded taxonomy on the project. If the tags exist, report the split unprompted — don't wait to be asked. A blended aggregate hides the number stakeholders actually want: e.g. a blended "most prompts show third-party directory mentions in fanout" can decompose into nearly all non-branded prompts but only a little over half of branded ones — materially different stories, and the non-branded (discovery) rate is usually the one that matters strategically. Reserve the blended figure for projects whose tag taxonomy doesn't support the split, and say so when you do.
 
 **Define "branded" by the prompt text, not by the tag.** The tag — Peec's own `branded` system tag or a user-defined one — is a **hint**, not the definition. Two failures are routine and they push in opposite directions: prompts created before the tag existed carry brand names without it (under-count), and a category or theme tag can carry prompts that name no brand at all (over-count). Observed on a live project: a brand-category tag contained a generic "best own-label product" prompt, which is not a branded prompt by any useful definition.
 
@@ -141,7 +141,7 @@ This is the single most informative shape for a "we vs them" narrative — bette
 
 **Use when:** the user wants a single visibility number for a group of brands (own brand + sister brands + acquired brands), e.g. *"what's our group visibility?"*, *"combined share for our brand family"*, *"Portfolio X total mention share."*
 
-**The wrong answer (common):** sum per-brand visibility percentages across the group. *"Own brand 35% + sister 31% = group 66%"* — **mathematically wrong** in every case where a single chat can mention more than one of the grouped brands, because the rate metrics share a denominator and overlap on any chat where two brands co-appear. The sum is always an upper bound; the actual combined figure is between the single-brand max (35% here) and the sum. See §7.37 on Ratio-type metrics and the hard rule in `peec-ai-tracking-strategy-builder` §14.2.
+**The wrong answer (common):** sum per-brand visibility percentages across the group. *"Brand A 40% + Brand B 30% = group 70%"* — **mathematically wrong** in every case where a single chat can mention more than one of the grouped brands, because the rate metrics share a denominator and overlap on any chat where two brands co-appear. The sum is always an upper bound; the actual combined figure is between the single-brand max (40% here) and the sum. See §7.37 on Ratio-type metrics and the hard rule in `peec-ai-tracking-strategy-builder` §14.2.
 
 **The right answer:** query Peec directly with a combined-brand filter.
 
@@ -155,7 +155,7 @@ get_brand_report(
 → visibility = chats in which ANY of the filtered brands appeared / total chats
 ```
 
-Peec handles the chat-level union internally. The returned `visibility` is the correct combined-group figure — 35–66% in the example above, not 66%. The call also returns SoV, sentiment, position, mention counts for the group as a whole.
+Peec handles the chat-level union internally. The returned `visibility` is the correct combined-group figure — 40–70% in the example above, not 70%. The call also returns SoV, sentiment, position, mention counts for the group as a whole.
 
 **Alternative: compute the union manually.** Where the `in` filter isn't usable (old client shim, a brand entity not yet created in Peec, computing across project boundaries):
 
@@ -581,7 +581,7 @@ Where the deliverable splits branded from non-branded, do the classification on 
    the misses.
 ```
 
-**Step 5 is not optional.** The known hazard is silent: a subagent that hits a rate limit (§7.24) part-way through its batch reports "done" for the batch anyway, having skipped the failed ids — observed as 2 of 35 missing with no error surfaced to the orchestrator. Set the batch size low enough to stay inside the rate limit, and treat the index-vs-harvest diff as the completion check, the same way §8.7 uses count reconciliation for writes.
+**Step 5 is not optional.** The known hazard is silent: a subagent that hits a rate limit (§7.24) part-way through its batch reports "done" for the batch anyway, having skipped the failed ids — observed as a few ids missing from a batch with no error surfaced to the orchestrator. Set the batch size low enough to stay inside the rate limit, and treat the index-vs-harvest diff as the completion check, the same way §8.7 uses count reconciliation for writes.
 
 **When to reach for this.** Per-item endpoints where the payload must survive unchanged: `get_chat` is the one in current use, and `get_url_content` (§6.6) has the same shape at volume. For anything you only need to *count* or *sample*, the deliberate-overflow-and-grep pattern in §7.32 is cheaper — this recipe is for when the raw rows themselves are the deliverable.
 
