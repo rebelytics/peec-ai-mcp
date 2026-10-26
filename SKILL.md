@@ -1,7 +1,7 @@
 ---
 name: peec-ai-mcp
 description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load when the user does Peec reporting, analysis, or multi-step work — visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups (brands, prompts, topics, tags), or Peec slash commands (`peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`). Also load for Peec data interpretation (sentiment, position, visibility, share of voice, retrieval vs citation, `get_actions` two-step workflow, `list_prompts.volume` ordinals, `get_url_content` 5-day refresh cadence) or when combining two or more Peec tools. Skip for trivial single-tool lookups like `list_projects`, `list_brands`, `list_topics` where Peec's own tool descriptions suffice. Teaches agents the real behaviour of the Peec MCP, including gotchas the official docs omit or get wrong.
-version: 2.3.1
+version: 2.3.2
 license: CC-BY-4.0
 origin: https://github.com/rebelytics/peec-ai-mcp
 maintainer: Eoghan Henn / rebelytics (eoghan@rebelytics.com)

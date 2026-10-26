@@ -82,4 +82,7 @@ See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for what's in scope and how to submit
 
 ## License
 
-CC BY 4.0 — see [`LICENSE`](./LICENSE). Reuse, adapt, redistribute. Keep the attribution.
+CC BY 4.0 — the licence text is in [LICENSE](./LICENSE): the full legal code, unmodified, as Creative Commons publishes it; the [human-readable summary](https://creativecommons.org/licenses/by/4.0/) says what it allows. Use it, fork it, adapt it, monetise it. Keep the attribution.
+
+Copyright (c) 2026 Eoghan Henn / rebelytics.com
+
