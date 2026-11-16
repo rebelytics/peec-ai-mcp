@@ -2,6 +2,8 @@
 
 A companion skill for the [Peec AI MCP server](https://docs.peec.ai/mcp/introduction). Drop it into any MCP-capable AI agent (Claude, Cursor, Codex, n8n, etc.) to get correct, actionable guidance on how to use the Peec MCP — including the gotchas the official docs omit or get wrong.
 
+Part of the [Open Skill Library](https://github.com/rebelytics/one-skill-to-rule-them-all/blob/main/OPEN-SKILL-LIBRARY.md), the open-source agent skills maintained with Task Observer.
+
 Released under [CC BY 4.0](./LICENSE). Reuse, adapt, redistribute — keep the attribution.
 
 > **Value scales with task complexity.** This is a comprehensive reference (~29k words / ~40k tokens when loaded) designed to replace trial-and-error on multi-step Peec work — full visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups. For trivial single-tool lookups like `list_projects` or `list_brands`, Peec's own tool descriptions are usually enough; the frontmatter deliberately avoids triggering on those. The payoff lands on tasks where data-interpretation gotchas (sentiment scale, position semantics, retrieval-vs-citation, `get_actions` two-step workflow, `list_prompts.volume` type coercion, `get_url_content` refresh cadence) or schema asymmetries (§7.39, §7.31) would otherwise produce confidently wrong output. Internal A/B testing across complexity tiers (simple lookups → deep multi-step audits) showed skill-assisted runs on the complex tier produced materially more correct output at a modest token cost, while the simple tier saw effectively no benefit — which is why the description is scoped to analysis and multi-step work, not every Peec mention.
