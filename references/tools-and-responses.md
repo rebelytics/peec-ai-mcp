@@ -1,6 +1,6 @@
 # The tool surface (§3–§5)
 
-Part of the **peec-ai-mcp** skill (CC BY 4.0 — Eoghan Henn / [rebelytics.com](https://www.rebelytics.com)). Section numbers are global across `SKILL.md` and `references/` — the section map in `SKILL.md` says where each § lives.
+Part of the **peec-ai-mcp** skill (CC BY 4.0 — Eoghan Henn and contributors). Section numbers are global across `SKILL.md` and `references/` — the section map in `SKILL.md` says where each § lives.
 
 **Load trigger:** Read before your first Peec tool call of the session — tool selection, write-safety classes, response format, pagination defaults, and the slash-command prompts.
 

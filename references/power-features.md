@@ -1,6 +1,6 @@
 # Hidden features & power moves (§6)
 
-Part of the **peec-ai-mcp** skill (CC BY 4.0 — Eoghan Henn / [rebelytics.com](https://www.rebelytics.com)). Section numbers are global across `SKILL.md` and `references/` — the section map in `SKILL.md` says where each § lives.
+Part of the **peec-ai-mcp** skill (CC BY 4.0 — Eoghan Henn and contributors). Section numbers are global across `SKILL.md` and `references/` — the section map in `SKILL.md` says where each § lives.
 
 **Load trigger:** Read when a task needs gap filters, mentioned_brand_count, brand regex, the get_actions two-step workflow, wave-based bulk writes, or scraped page content via get_url_content.
 

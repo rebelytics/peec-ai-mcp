@@ -1,10 +1,11 @@
 ---
 name: peec-ai-mcp
 description: Companion skill for the Peec AI MCP server (https://api.peec.ai/mcp). Load when the user does Peec reporting, analysis, or multi-step work — visibility reports, per-engine comparisons, competitive gap analysis, source-authority audits, project tune-ups (brands, prompts, topics, tags), or Peec slash commands (`peec_weekly_pulse`, `peec_competitor_radar`, `peec_engine_scorecard`, `peec_topic_heatmap`, `peec_prompt_grader`, `peec_source_authority`, `peec_campaign_tracker`). Also load for Peec data interpretation (sentiment, position, visibility, share of voice, retrieval vs citation, `get_actions` two-step workflow, `list_prompts.volume` ordinals, `get_url_content` 5-day refresh cadence) or when combining two or more Peec tools. Skip for trivial single-tool lookups like `list_projects`, `list_brands`, `list_topics` where Peec's own tool descriptions suffice. Teaches agents the real behaviour of the Peec MCP, including gotchas the official docs omit or get wrong.
-version: 2.3.2
 license: CC-BY-4.0
-origin: https://github.com/rebelytics/peec-ai-mcp
-maintainer: Eoghan Henn / rebelytics (eoghan@rebelytics.com)
+metadata:
+  author: Eoghan Henn and contributors
+  source: https://github.com/rebelytics/peec-ai-mcp
+  version: "2.3.3"
 ---
 
 # Peec AI MCP Companion Skill
@@ -186,22 +187,10 @@ this skill exists to prevent get produced.
 | `references/gotchas.md` | §7 | Contents list before reporting any numbers; full entries for every tool/field in your workflow |
 | `references/recipes.md` | §8 | When running a composite analysis (visibility report, engine comparison, gap analysis, source audit, …) |
 
-## 9. Contributing
+## Feedback on this skill
 
-Spotted a discrepancy between this skill and Peec's actual behaviour? Discovered a new tool, parameter, or slash-command prompt? Hit a setup quirk in a client not yet covered? Please contribute back:
-
-- **Issues and PRs:** [github.com/rebelytics/peec-ai-mcp](https://github.com/rebelytics/peec-ai-mcp)
-- **Workflow:** See `CONTRIBUTING.md` in this repo for what's in scope and how to submit changes.
-
-The goal is that anyone pulling this skill six months from now gets behaviour grounded in current reality, not a stale snapshot. Contributions are the mechanism that keeps that promise.
-
----
-
-## 10. License & attribution
-
-**License:** [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Reuse, adapt, redistribute — just keep attribution.
-
-**Attribution:**
-> Peec AI MCP Companion Skill, maintained by Eoghan Henn (rebelytics.com), github.com/rebelytics/peec-ai-mcp.
+Spotted a discrepancy between this skill and Peec's actual behaviour, a new tool, parameter or slash-command prompt, or a setup quirk in a client not yet covered? Offer to draft a report for https://github.com/rebelytics/peec-ai-mcp; before drafting, search that repository's open and closed issues and pull requests for the same problem, and read its CONTRIBUTING file for how the maintainer takes reports. If the problem is the agent not following the skill's rules, acknowledge and correct it instead.
 
 **Not affiliated with Peec AI.** Peec's team has not reviewed or endorsed this skill.
+
+Peec AI MCP Companion Skill: Eoghan Henn and contributors | CC BY 4.0

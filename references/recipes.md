@@ -1,6 +1,6 @@
 # Common recipes (§8)
 
-Part of the **peec-ai-mcp** skill (CC BY 4.0 — Eoghan Henn / [rebelytics.com](https://www.rebelytics.com)). Section numbers are global across `SKILL.md` and `references/` — the section map in `SKILL.md` says where each § lives.
+Part of the **peec-ai-mcp** skill (CC BY 4.0 — Eoghan Henn and contributors). Section numbers are global across `SKILL.md` and `references/` — the section map in `SKILL.md` says where each § lives.
 
 **Load trigger:** Read when running a composite analysis — full visibility report, per-engine comparison, competitive gap analysis, source-authority audit, safe test-entity lifecycle, and the other multi-step workflows.
 
